@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
+import { CardSkeleton, ListSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import {
@@ -63,9 +64,10 @@ export default function TeamDetailPage() {
   }
   if (!team) {
     return (
-      <Shell email={me.email ?? ""} onLogout={() => router.replace("/")}>
-        <p className="text-sm text-zinc-500">Loading…</p>
-      </Shell>
+      <PageSkeleton>
+        <ListSkeleton rows={4} />
+        <CardSkeleton rows={3} className="mt-6" />
+      </PageSkeleton>
     );
   }
 

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
+import { ListSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import {
@@ -42,9 +43,9 @@ export default function NotificationsPage() {
 
   if (!loaded) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-950">
-        <p className="text-sm text-zinc-500">Loading…</p>
-      </div>
+      <PageSkeleton>
+        <ListSkeleton rows={5} />
+      </PageSkeleton>
     );
   }
 

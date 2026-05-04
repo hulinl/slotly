@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
+import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormSuccess } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import {
@@ -57,9 +58,9 @@ export default function NotificationPrefsPage() {
 
   if (!prefs) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-950">
-        <p className="text-sm text-zinc-500">Loading…</p>
-      </div>
+      <PageSkeleton>
+        <CardSkeleton rows={10} />
+      </PageSkeleton>
     );
   }
 
