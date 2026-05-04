@@ -1,0 +1,34 @@
+# --- Core ---
+Django==5.1.4
+djangorestframework==3.15.2
+django-environ==0.11.2
+django-cors-headers==4.6.0
+
+# --- Database ---
+psycopg[binary]==3.2.3
+
+# --- Image handling (User.avatar) ---
+Pillow==11.0.0
+
+# --- Auth ---
+argon2-cffi==23.1.0
+django-allauth[mfa]==65.3.0   # email-based account flows; headless mode for SPA
+
+# --- Async / queue ---
+celery==5.4.0
+redis==5.2.1
+django-celery-beat==2.7.0     # DB-backed periodic schedule for ICS polls
+
+# --- Calendar parsing (used in milestone 3, listed early so requirements are stable) ---
+icalendar==6.1.0
+httpx==0.28.1
+python-dateutil==2.9.0.post0
+
+# --- Production server ---
+gunicorn==23.0.0
+
+# --- Dev / tooling ---
+ruff==0.8.4
+pytest==8.3.4
+pytest-django==4.9.0
+ipython==8.31.0
