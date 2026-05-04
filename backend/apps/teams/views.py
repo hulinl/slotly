@@ -12,6 +12,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
+from apps.notifications.dispatch import notify
+from apps.notifications.models import Notification
+
 from .email import send_invitation_email
 from .models import Invitation, Membership, Team
 from .permissions import IsTeamMember, is_admin, is_member
@@ -35,7 +38,15 @@ def _ensure_admin_or_403(user, team) -> Response | None:
 
 def _delete_team_if_no_admins(team: Team) -> bool:
     if team.admin_count == 0:
+        members = list(team.memberships.select_related("user"))
+        team_id, team_name = team.pk, team.name
         team.delete()
+        for m in members:
+            notify(
+                m.user,
+                Notification.Type.TEAM_DELETED,
+                {"team_id": team_id, "team_name": team_name},
+            )
         return True
     return False
 
@@ -110,12 +121,33 @@ class TeamViewSet(ModelViewSet):
 
         with transaction.atomic():
             was_only_admin = membership.role == Membership.Role.ADMIN and team.admin_count == 1
+            leaver_email = request.user.email
+            team_id, team_name = team.pk, team.name
+            other_admin_users = list(
+                Membership.objects.filter(team=team, role=Membership.Role.ADMIN)
+                .exclude(user=request.user)
+                .select_related("user"),
+            )
             membership.delete()
-            # If the only remaining admin just left, the team is auto-deleted
-            # to keep PRD §5.3 invariant ("zero admins → team deleted").
             if was_only_admin:
+                # Last admin → team auto-deletes; notify everyone (the leaver is
+                # already gone, so they don't get the team_deleted notification).
+                members = list(team.memberships.select_related("user"))
                 team.delete()
+                for m in members:
+                    notify(
+                        m.user,
+                        Notification.Type.TEAM_DELETED,
+                        {"team_id": team_id, "team_name": team_name},
+                    )
                 return Response({"detail": "You were the last admin; team deleted."}, status=200)
+        # Notify remaining admins that someone left.
+        for am in other_admin_users:
+            notify(
+                am.user,
+                Notification.Type.TEAM_MEMBER_LEFT,
+                {"team_id": team_id, "team_name": team_name, "member_email": leaver_email},
+            )
         return Response({"detail": "Left team."}, status=200)
 
     @action(detail=True, methods=["post"], url_path="invite")
@@ -151,14 +183,29 @@ class TeamViewSet(ModelViewSet):
             invited_by=request.user,
             role_on_accept=role,
         )
-        registered = User.objects.filter(email__iexact=email).exists()
+        registered_user = User.objects.filter(email__iexact=email).first()
         try:
-            send_invitation_email(invitation, recipient_is_registered=registered)
+            send_invitation_email(invitation, recipient_is_registered=registered_user is not None)
         except Exception as exc:  # noqa: BLE001
-            # Email failed; keep the row, surface to caller. They can resend later.
             return Response(
                 {"detail": f"Invitation saved, but email failed to send: {exc}"},
                 status=202,
+            )
+        # Bell-icon notification for registered recipients (email already sent
+        # by send_invitation_email, so suppress dispatcher's email channel).
+        if registered_user is not None:
+            notify(
+                registered_user,
+                Notification.Type.TEAM_INVITATION_SENT,
+                {
+                    "team_id": team.pk,
+                    "team_name": team.name,
+                    "inviter_email": request.user.email,
+                    "invitation_id": invitation.pk,
+                    "invitation_token": invitation.token,
+                    "role_on_accept": invitation.role_on_accept,
+                },
+                send_email=False,
             )
         return Response({"detail": "Invitation sent.", "id": invitation.id}, status=201)
 
@@ -215,9 +262,17 @@ class TeamViewSet(ModelViewSet):
                         {"detail": "You are the only admin; promote someone else first."},
                         status=400,
                     )
+                removed_user = membership.user
+                team_id, team_name = team.pk, team.name
                 membership.delete()
                 if _delete_team_if_no_admins(team):
                     return Response({"detail": "Team auto-deleted (no admins remained)."})
+            # Tell the removed user.
+            notify(
+                removed_user,
+                Notification.Type.TEAM_MEMBER_REMOVED,
+                {"team_id": team_id, "team_name": team_name},
+            )
             return Response(status=204)
 
         # PATCH: change role
@@ -237,10 +292,23 @@ class TeamViewSet(ModelViewSet):
                     {"detail": "You are the only admin; promote someone else first."},
                     status=400,
                 )
+            previous_role = membership.role
             membership.role = new_role
             membership.save(update_fields=["role"])
             if _delete_team_if_no_admins(team):
                 return Response({"detail": "Team auto-deleted (no admins remained)."})
+        # Notify the affected member if their role actually changed.
+        if previous_role != new_role and membership.user_id != request.user.id:
+            event = (
+                Notification.Type.TEAM_ROLE_PROMOTED
+                if new_role == Membership.Role.ADMIN
+                else Notification.Type.TEAM_ROLE_DEMOTED
+            )
+            notify(
+                membership.user,
+                event,
+                {"team_id": team.pk, "team_name": team.name},
+            )
         return Response(MemberSerializer(membership).data)
 
 
@@ -277,18 +345,50 @@ class InvitationActionView(APIView):
 
         if action == "accept":
             with transaction.atomic():
-                Membership.objects.get_or_create(
+                _, created = Membership.objects.get_or_create(
                     team=invitation.team,
                     user=request.user,
                     defaults={"role": invitation.role_on_accept},
                 )
                 invitation.status = Invitation.Status.ACCEPTED
                 invitation.save(update_fields=["status"])
+            payload = {
+                "team_id": invitation.team_id,
+                "team_name": invitation.team.name,
+                "accepter_email": request.user.email,
+            }
+            # Tell the inviter.
+            if invitation.invited_by_id is not None:
+                notify(invitation.invited_by, Notification.Type.TEAM_INVITATION_ACCEPTED, payload)
+            # Tell other admins (excluding the inviter) that someone joined.
+            if created:
+                others = (
+                    Membership.objects.filter(team=invitation.team, role=Membership.Role.ADMIN)
+                    .exclude(user_id=request.user.id)
+                    .exclude(user_id=invitation.invited_by_id)
+                    .select_related("user")
+                )
+                for am in others:
+                    notify(
+                        am.user,
+                        Notification.Type.TEAM_MEMBER_JOINED,
+                        {**payload, "member_email": request.user.email},
+                    )
             return Response({"team_id": invitation.team_id, "status": "accepted"})
 
         if action == "reject":
             invitation.status = Invitation.Status.REJECTED
             invitation.save(update_fields=["status"])
+            if invitation.invited_by_id is not None:
+                notify(
+                    invitation.invited_by,
+                    Notification.Type.TEAM_INVITATION_REJECTED,
+                    {
+                        "team_id": invitation.team_id,
+                        "team_name": invitation.team.name,
+                        "rejecter_email": request.user.email,
+                    },
+                )
             return Response({"status": "rejected"})
 
         return Response({"detail": "Unknown action."}, status=400)

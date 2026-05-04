@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
+import { AuthedHeader } from "@/components/AuthedHeader";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
-import { getSession, logout } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 import {
   cancelInvitation,
   deleteTeam,
@@ -135,25 +136,10 @@ function Shell({
   onLogout: () => void;
   children: React.ReactNode;
 }) {
+  void onLogout;
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
-        <Link href="/" className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          Slotly
-        </Link>
-        <div className="flex items-center gap-4 text-sm">
-          <span className="text-zinc-500 dark:text-zinc-400">{email}</span>
-          <button
-            onClick={async () => {
-              await logout();
-              onLogout();
-            }}
-            className="text-zinc-600 underline dark:text-zinc-400"
-          >
-            Sign out
-          </button>
-        </div>
-      </header>
+      <AuthedHeader email={email} />
       <main className="mx-auto max-w-2xl space-y-8 px-6 py-10">{children}</main>
     </div>
   );

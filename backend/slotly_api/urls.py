@@ -15,4 +15,5 @@ urlpatterns = [
     path("api/", include("apps.calendars.urls")),
     path("api/", include("apps.teams.urls")),
     path("api/", include("apps.search.urls")),
+    path("api/", include("apps.notifications.urls")),
 ]

@@ -56,6 +56,10 @@ class User(AbstractUser):
     phone = models.CharField(max_length=32, blank=True)
     avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
     working_hours = models.JSONField(default=default_working_hours)
+    # Per-event × per-channel matrix (PRD §5.6). Initialized at signup via
+    # apps.notifications.signals. Empty dict for legacy users; the dispatcher
+    # treats a missing event key as "all on", matching the default.
+    notification_prefs = models.JSONField(default=dict, blank=True)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS: list[str] = []

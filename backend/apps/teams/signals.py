@@ -14,6 +14,9 @@ from django.db import transaction
 from django.dispatch import receiver
 from django.utils import timezone
 
+from apps.notifications.dispatch import notify
+from apps.notifications.models import Notification
+
 from .models import Invitation, Membership
 
 logger = logging.getLogger(__name__)
@@ -28,10 +31,12 @@ def auto_accept_pending_invitations(sender, request, email_address, **kwargs):  
     if user is None:
         return
 
-    pending = Invitation.objects.select_related("team").filter(
-        invited_email__iexact=email_address.email,
-        status=Invitation.Status.PENDING,
-        expires_at__gt=timezone.now(),
+    pending = list(
+        Invitation.objects.select_related("team", "invited_by").filter(
+            invited_email__iexact=email_address.email,
+            status=Invitation.Status.PENDING,
+            expires_at__gt=timezone.now(),
+        ),
     )
 
     with transaction.atomic():
@@ -49,3 +54,18 @@ def auto_accept_pending_invitations(sender, request, email_address, **kwargs):  
                 email_address.email,
                 invitation.team_id,
             )
+
+    # Notify each inviter outside the transaction so the email round-trip
+    # doesn't keep a row locked.
+    for invitation in pending:
+        if invitation.invited_by_id is None:
+            continue
+        notify(
+            invitation.invited_by,
+            Notification.Type.TEAM_INVITATION_ACCEPTED,
+            {
+                "team_id": invitation.team_id,
+                "team_name": invitation.team.name,
+                "accepter_email": user.email,
+            },
+        )

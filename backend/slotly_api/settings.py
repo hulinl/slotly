@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "apps.teams",
     "apps.calendars",
     "apps.search",
+    "apps.notifications",
 ]
 
 SITE_ID = 1

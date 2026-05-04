@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { AuthedHeader } from "@/components/AuthedHeader";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
-import { getSession, logout } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
 import {
   getMe,
   patchMe,
@@ -56,23 +57,7 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
-        <Link href="/" className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          Slotly
-        </Link>
-        <div className="flex items-center gap-4 text-sm">
-          <span className="text-zinc-500 dark:text-zinc-400">{me.email}</span>
-          <button
-            onClick={async () => {
-              await logout();
-              router.replace("/");
-            }}
-            className="text-zinc-600 underline dark:text-zinc-400"
-          >
-            Sign out
-          </button>
-        </div>
-      </header>
+      <AuthedHeader email={me.email} />
 
       <main className="mx-auto max-w-2xl space-y-8 px-6 py-10">
         <div>
@@ -82,6 +67,30 @@ export default function SettingsPage() {
 
         <ProfileCard me={me} onSaved={setMe} />
         <WorkingHoursCard me={me} onSaved={setMe} />
+
+        <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="mb-1 text-base font-semibold text-zinc-900 dark:text-zinc-50">More</h2>
+          <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+            <li>
+              <Link href="/settings/calendars" className="flex items-center justify-between py-3 text-sm hover:underline">
+                <span>Calendar subscriptions</span>
+                <span className="text-zinc-400">→</span>
+              </Link>
+            </li>
+            <li>
+              <Link href="/settings/teams" className="flex items-center justify-between py-3 text-sm hover:underline">
+                <span>Teams &amp; invitations</span>
+                <span className="text-zinc-400">→</span>
+              </Link>
+            </li>
+            <li>
+              <Link href="/settings/notifications" className="flex items-center justify-between py-3 text-sm hover:underline">
+                <span>Notification preferences</span>
+                <span className="text-zinc-400">→</span>
+              </Link>
+            </li>
+          </ul>
+        </section>
       </main>
     </div>
   );
