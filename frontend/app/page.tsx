@@ -73,9 +73,12 @@ export default function Home() {
                 <Link href="/settings/calendars" className="block">
                   <Button variant="secondary">Calendar subscriptions</Button>
                 </Link>
+                <Link href="/settings/teams" className="block">
+                  <Button variant="secondary">Teams &amp; invitations</Button>
+                </Link>
               </div>
               <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-                Teams and shared availability search coming next.
+                Shared availability search coming next.
               </p>
             </div>
           )}

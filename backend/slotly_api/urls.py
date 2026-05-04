@@ -13,4 +13,5 @@ urlpatterns = [
     path("_allauth/", include("allauth.headless.urls")),
     path("api/", include("apps.accounts.urls")),
     path("api/", include("apps.calendars.urls")),
+    path("api/", include("apps.teams.urls")),
 ]
