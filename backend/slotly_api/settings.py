@@ -115,10 +115,13 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # --- allauth (email-only) ---
 ACCOUNT_LOGIN_METHODS = {"email"}
+ACCOUNT_AUTHENTICATION_METHOD = "email"          # legacy alias — read by headless /config
 ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
-ACCOUNT_EMAIL_REQUIRED = True       # legacy alias still checked by allauth at boot
-ACCOUNT_USERNAME_REQUIRED = False   # legacy alias for our usernameless model
+ACCOUNT_EMAIL_REQUIRED = True                    # legacy alias still checked at boot
+ACCOUNT_USERNAME_REQUIRED = False                # legacy alias for usernameless model
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None         # we removed `username` from User
+ACCOUNT_USER_MODEL_EMAIL_FIELD = "email"
 ACCOUNT_EMAIL_SUBJECT_PREFIX = "[Slotly] "
 ACCOUNT_RATE_LIMITS = {"login_failed": "5/15m/key"}
 HEADLESS_ONLY = True
