@@ -11,4 +11,5 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("healthz", healthz),
     path("_allauth/", include("allauth.headless.urls")),
+    path("api/", include("apps.accounts.urls")),
 ]

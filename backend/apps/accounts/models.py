@@ -3,6 +3,19 @@ from __future__ import annotations
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 
+# Per PRD §5.1: default working hours are Mon-Fri 8:00-17:00, weekends unavailable.
+# Single window per day in MVP; lunch breaks etc. are out of scope.
+WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+
+
+def default_working_hours() -> dict[str, dict[str, str | bool]]:
+    weekday_default = {"start": "08:00", "end": "17:00", "available": True}
+    weekend_default = {"start": "09:00", "end": "13:00", "available": False}
+    return {
+        **{day: dict(weekday_default) for day in WEEKDAYS[:5]},
+        **{day: dict(weekend_default) for day in WEEKDAYS[5:]},
+    }
+
 
 class UserManager(BaseUserManager):
     """Email-as-identity user manager. Username field is unused."""
@@ -42,6 +55,7 @@ class User(AbstractUser):
     last_name = models.CharField(max_length=80, blank=True)
     phone = models.CharField(max_length=32, blank=True)
     avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
+    working_hours = models.JSONField(default=default_working_hours)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS: list[str] = []

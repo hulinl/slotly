@@ -66,8 +66,13 @@ export default function Home() {
             <div className="mx-auto max-w-sm rounded-lg border border-zinc-200 bg-white p-6 text-left dark:border-zinc-800 dark:bg-zinc-900">
               <p className="text-sm text-zinc-600 dark:text-zinc-400">Signed in as</p>
               <p className="text-base font-medium text-zinc-900 dark:text-zinc-50">{state.user.email}</p>
+              <div className="mt-4 flex flex-col gap-2">
+                <Link href="/settings" className="block">
+                  <Button variant="secondary">Profile &amp; working hours</Button>
+                </Link>
+              </div>
               <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-                Onboarding wizard, teams, and calendar subscriptions coming next.
+                Teams and calendar subscriptions coming next.
               </p>
             </div>
           )}
