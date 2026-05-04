@@ -12,4 +12,5 @@ urlpatterns = [
     path("healthz", healthz),
     path("_allauth/", include("allauth.headless.urls")),
     path("api/", include("apps.accounts.urls")),
+    path("api/", include("apps.calendars.urls")),
 ]

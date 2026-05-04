@@ -19,8 +19,9 @@ celery==5.4.0
 redis==5.2.1
 django-celery-beat==2.7.0     # DB-backed periodic schedule for ICS polls
 
-# --- Calendar parsing (used in milestone 3, listed early so requirements are stable) ---
+# --- Calendar parsing (milestone 3) ---
 icalendar==6.1.0
+recurring-ical-events==3.4.1   # RRULE/EXDATE expansion on top of icalendar
 httpx==0.28.1
 python-dateutil==2.9.0.post0
 

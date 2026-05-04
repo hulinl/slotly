@@ -70,9 +70,12 @@ export default function Home() {
                 <Link href="/settings" className="block">
                   <Button variant="secondary">Profile &amp; working hours</Button>
                 </Link>
+                <Link href="/settings/calendars" className="block">
+                  <Button variant="secondary">Calendar subscriptions</Button>
+                </Link>
               </div>
               <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-400">
-                Teams and calendar subscriptions coming next.
+                Teams and shared availability search coming next.
               </p>
             </div>
           )}

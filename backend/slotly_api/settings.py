@@ -174,8 +174,18 @@ DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="no-reply@slotly.local")
 # --- Celery / Redis ---
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://localhost:6379/1")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://localhost:6379/2")
-CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 CELERY_TASK_ALWAYS_EAGER = DEBUG and env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
+
+# PRD §5.2: poll every ICS calendar every 5 minutes. Run with:
+#   celery -A slotly_api beat -l info
+# Beat schedule lives in code; switch to DatabaseScheduler later if operators
+# want to edit cadence at runtime.
+CELERY_BEAT_SCHEDULE = {
+    "calendars-sync-all-due": {
+        "task": "calendars.sync_all_due",
+        "schedule": 300.0,  # seconds
+    },
+}
 
 CACHES = {
     "default": {
