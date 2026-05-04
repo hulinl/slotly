@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
-import { login, needsEmailVerification } from "@/lib/auth";
+import { useEffect, useState, type FormEvent } from "react";
+import { getSession, login, logout, needsEmailVerification } from "@/lib/auth";
 import { Button, FormError, Input, Label } from "@/components/ui";
 
 export default function LoginPage() {
@@ -12,6 +12,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [existingUser, setExistingUser] = useState<string | null>(null);
+
+  useEffect(() => {
+    getSession().then((res) => {
+      if (res.meta?.is_authenticated && res.data?.user) {
+        setExistingUser(res.data.user.email);
+      }
+    });
+  }, []);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -19,6 +28,12 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       const res = await login(email, password);
+      if (res.status === 409) {
+        const me = await getSession();
+        setExistingUser(me.data?.user?.email ?? "another account");
+        setError("You're already signed in. Sign out first to switch accounts.");
+        return;
+      }
       if (res.meta?.is_authenticated) {
         router.replace("/");
         router.refresh();
@@ -34,6 +49,33 @@ export default function LoginPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  if (existingUser) {
+    return (
+      <div className="space-y-4">
+        <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+          You&apos;re already signed in
+        </h1>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          You&apos;re signed in as <strong>{existingUser}</strong>. To switch accounts, sign out first.
+        </p>
+        <Button
+          onClick={async () => {
+            await logout();
+            setExistingUser(null);
+            setError(null);
+          }}
+        >
+          Sign out and switch account
+        </Button>
+        <p className="text-center text-sm text-zinc-500 dark:text-zinc-400">
+          <Link className="font-medium text-zinc-900 underline dark:text-zinc-50" href="/">
+            Back to home
+          </Link>
+        </p>
+      </div>
+    );
   }
 
   return (
