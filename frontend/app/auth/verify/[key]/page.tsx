@@ -18,7 +18,16 @@ export default function VerifyEmailPage() {
   useEffect(() => {
     if (requested.current) return;
     requested.current = true;
-    confirmEmail(params.key)
+    // Defensive: ensure the key is URL-decoded before posting it. Allauth
+    // tokens contain ':' which gets URL-encoded to %3A in the email link;
+    // decodeURIComponent on an already-decoded value is a no-op.
+    let key: string;
+    try {
+      key = decodeURIComponent(params.key);
+    } catch {
+      key = params.key;
+    }
+    confirmEmail(key)
       .then((res) => {
         if (res.meta?.is_authenticated) {
           // allauth promotes the pending session to authenticated on confirm,

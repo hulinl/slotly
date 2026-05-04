@@ -22,8 +22,14 @@ export default function ResetPasswordPage() {
       return;
     }
     setSubmitting(true);
+    let key: string;
     try {
-      const res = await resetPassword(params.key, password);
+      key = decodeURIComponent(params.key);
+    } catch {
+      key = params.key;
+    }
+    try {
+      const res = await resetPassword(key, password);
       if (res.status === 200 || res.meta?.is_authenticated) {
         router.replace("/auth/login?reset=ok");
         return;
