@@ -1,10 +1,11 @@
 from django.urls import path
 
-from .views import MeView
+from .views import DeleteMeView, MeView
 
 urlpatterns = [
     # Registered without trailing slash to avoid the Next.js (strip slash)
     # ↔ Django APPEND_SLASH (add slash) redirect loop when proxied through
     # the frontend dev server.
     path("me", MeView.as_view(), name="me"),
+    path("me/delete", DeleteMeView.as_view(), name="me-delete"),
 ]

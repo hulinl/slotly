@@ -64,3 +64,28 @@ export async function patchMe(patch: MePatch): Promise<Me> {
   if (!res.ok) throw new MeApiError(res.status, body);
   return body as Me;
 }
+
+export type DeleteMePreview = {
+  teams_member_count: number;
+  teams_will_be_deleted: number;
+  team_members_will_be_notified: number;
+  calendars_count: number;
+  cached_events_count: number;
+  notifications_count: number;
+};
+
+export async function getDeleteMePreview(): Promise<DeleteMePreview> {
+  const res = await fetch("/api/me/delete", { credentials: "include" });
+  if (!res.ok) throw new MeApiError(res.status, await res.json().catch(() => ({})));
+  return res.json();
+}
+
+export async function deleteMe(password: string): Promise<void> {
+  const res = await fetch("/api/me/delete", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) throw new MeApiError(res.status, await res.json().catch(() => ({})));
+}

@@ -91,6 +91,12 @@ export default function SettingsPage() {
                 <span className="text-zinc-400">→</span>
               </Link>
             </li>
+            <li>
+              <Link href="/settings/account" className="flex items-center justify-between py-3 text-sm hover:underline">
+                <span>Account &amp; deletion</span>
+                <span className="text-zinc-400">→</span>
+              </Link>
+            </li>
           </ul>
         </section>
       </main>
