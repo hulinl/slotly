@@ -346,6 +346,54 @@ On every parse, Slotly extracts only:
 
 ## 8. Technical Architecture
 
+### Phase-1 production target: ≤ €20 / month on Azure
+
+The user-funded budget for the first deployment (internal use, ~10 users)
+is **€20 / month all-in**. The reference architecture below trades the
+"big SaaS" defaults for cost-aware Azure primitives. The full Container
+Apps + Cache for Redis stack remains the upgrade path once usage justifies
+it.
+
+| Component | Phase-1 (≤ €20/mo) | Phase-2 (scale-out) |
+|---|---|---|
+| Frontend | **Azure Static Web Apps Free** (Next.js, 100 GB bandwidth) — €0 | Container Apps |
+| Backend API | **Azure Container Apps** (Consumption plan, scale-to-zero) — ~€0–5 with low traffic; the free monthly grant (180k vCPU-sec, 360k GiB-sec, 2M requests) covers it | Same, Dedicated plan |
+| Background sync | **Azure Container Apps Job** triggered every 5 min (cron), runs `manage.py poll_calendars` — pay-per-execution, ~€0–2 | Celery worker + Beat as long-running services |
+| Database | **Azure Database for PostgreSQL Flexible Server, B1ms (1 vCPU, 2 GiB) burstable** — €12–15 | Same tier, then GP_Standard_D2s |
+| Cache + Broker | **Skip Redis.** Use Django DB cache; the scheduled Job replaces the Celery broker | Azure Cache for Redis Basic C0 |
+| Email (transactional) | **Azure Communication Services Email**, pay-per-message ~$0.0008/email — ~€0–2 | Same |
+| DNS + TLS | webglobe.cz keeps `slotly.team`; Static Web Apps + Container Apps issue managed certs | Same |
+| **Total** | **~€15–22 / month** | scales linearly |
+
+**Rationale for Phase-1 simplifications:**
+
+- **Static Web Apps Free** handles SSR for our small page count and gives
+  HTTPS + CDN out of the box.
+- **Consumption Container Apps** are billed by vCPU-seconds + memory-seconds
+  + requests. With a tiny user base the monthly free grant (180k vCPU-sec ≈
+  50 hours of one vCPU) is plenty.
+- **Container Apps Jobs** instead of a long-running Celery worker. A
+  `manage.py poll_calendars` job runs every 5 min, syncs all enabled
+  calendars in-process, exits. Same business outcome, no broker needed.
+  Total wall time stays well under the free grant.
+- **No Redis.** Caching falls back to Django's `DatabaseCache` backend; rate
+  limits move to the same. Only mandatory loss is sub-second cache hits
+  (negligible at this scale).
+- **Postgres B1ms is the floor.** It's the single largest line item but
+  unavoidable for a managed Postgres on Azure. Self-hosted Postgres in a
+  Container App could be cheaper (~€5/mo for the storage + compute) at the
+  cost of operational headache; we accept B1ms's price for managed backups
+  + HA-readiness.
+
+**Code changes required for Phase-1 (deferred to M14 deploy work):**
+
+1. Add a `poll_calendars` management command that calls
+   `apps.calendars.tasks.sync_all_due` synchronously.
+2. Move Django cache + ratelimit storage from Redis to `db_cache`.
+3. Document the Container Apps Jobs cron in `docker-compose.prod.yml` /
+   Bicep / Terraform.
+4. Wire ACS email backend in production settings.
+
 ### Recommended stack
 
 **Frontend**

@@ -4,9 +4,9 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
-  /* Theme overrides for react-day-picker (v9) — match our zinc palette. */
-  --rdp-accent-color: #0f172a;
-  --rdp-accent-background-color: rgba(15, 23, 42, 0.06);
+  /* Theme overrides for react-day-picker (v9) — match our indigo brand. */
+  --rdp-accent-color: #4f46e5;
+  --rdp-accent-background-color: rgba(79, 70, 229, 0.08);
   --rdp-day-height: 2.25rem;
   --rdp-day-width: 2.25rem;
   --rdp-font-family: inherit;
@@ -23,8 +23,8 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
-    --rdp-accent-color: #f4f4f5;
-    --rdp-accent-background-color: rgba(244, 244, 245, 0.08);
+    --rdp-accent-color: #818cf8;
+    --rdp-accent-background-color: rgba(129, 140, 248, 0.12);
   }
 }
 

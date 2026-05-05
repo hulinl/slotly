@@ -80,8 +80,9 @@ export default function TeammateProfilePage() {
     })().catch(() => router.replace("/auth/login"));
   }, [userId, router]);
 
-  // Once we have the teammate, fetch the next 14 days of free slots in any
-  // shared team.
+  // Once we have the teammate, fetch 8 weeks of free slots in any shared
+  // team. The SlotsCalendar's week navigation needs ≥ 2 weeks of data to
+  // be useful — 14 days was too short.
   useEffect(() => {
     if (!user || user.shared_team_ids.length === 0) return;
     setSearching(true);
@@ -89,7 +90,7 @@ export default function TeammateProfilePage() {
     const teamId = user.shared_team_ids[0];
     const now = new Date();
     const end = new Date();
-    end.setDate(end.getDate() + 14);
+    end.setDate(end.getDate() + 56);
     searchSlots({
       team_id: teamId,
       member_ids: [user.id],
@@ -202,7 +203,7 @@ export default function TeammateProfilePage() {
               const teamId = user.shared_team_ids[0];
               const now = new Date();
               const end = new Date();
-              end.setDate(end.getDate() + 14);
+              end.setDate(end.getDate() + 56);
               searchSlots({
                 team_id: teamId,
                 member_ids: [user.id],
@@ -222,7 +223,7 @@ export default function TeammateProfilePage() {
             <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
               When {user.first_name || "they"} {user.first_name ? "is" : "are"} free
             </h2>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Next 14 days · 60-min slots</p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">Next 8 weeks · 60-min slots · use ‹ › to navigate</p>
           </header>
           {searchError && <FormError message={searchError} />}
           {searching && !slots ? (
@@ -233,7 +234,7 @@ export default function TeammateProfilePage() {
             <section className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
               {user.shared_team_ids.length === 0
                 ? "You don't share a team with this user, so we can't compute availability."
-                : "No 1-hour slots in their working hours over the next 14 days."}
+                : "No 1-hour slots in their working hours over the next 8 weeks."}
             </section>
           )}
           <div className="flex justify-end">

@@ -2,12 +2,25 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowRight,
+  BellRing,
+  Building2,
+  Calendar,
+  CalendarDays,
+  CheckCircle2,
+  Circle,
+  MailOpen,
+  Sparkles,
+  type LucideIcon,
+} from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
+import { Logo, LogoMark } from "@/components/Logo";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import { listUnavailabilities, type Unavailability } from "@/lib/availability";
-import { listCalendars, type Calendar } from "@/lib/calendars";
+import { listCalendars, type Calendar as UserCalendar } from "@/lib/calendars";
 import { getMe, type Me } from "@/lib/me";
 import { listNotifications } from "@/lib/notifications";
 import {
@@ -28,7 +41,7 @@ import {
 type Dashboard = {
   me: Me;
   teams: TeamSummary[];
-  calendars: Calendar[];
+  calendars: UserCalendar[];
   invitations: IncomingInvitation[];
   unread: number;
   saved: SavedSearch[];
@@ -173,37 +186,45 @@ function DashboardView({
             </p>
           </div>
           <Link href="/search" className="w-full sm:w-auto">
-            <Button className="sm:w-auto sm:px-6">Find a slot →</Button>
+            <Button className="inline-flex items-center justify-center gap-2 sm:w-auto sm:px-6">
+              <Calendar size={16} />
+              Find a slot
+              <ArrowRight size={14} />
+            </Button>
           </Link>
         </div>
       </section>
 
       {showOnboarding && (
-        <section className="rounded-xl border border-amber-200 bg-amber-50 p-5 dark:border-amber-900 dark:bg-amber-950/30">
-          <h2 className="mb-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
+        <section className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-5 dark:border-indigo-900/60 dark:bg-indigo-950/20">
+          <h2 className="mb-3 inline-flex items-center gap-2 text-sm font-semibold text-indigo-900 dark:text-indigo-200">
+            <Sparkles size={15} />
             Get started
           </h2>
           <ul className="space-y-1.5">
             {onboarding.map((step) => (
               <li key={step.key} className="flex items-center gap-2 text-sm">
-                <span
-                  className={
-                    step.done
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-zinc-400 dark:text-zinc-500"
-                  }
-                  aria-hidden="true"
-                >
-                  {step.done ? "✓" : "○"}
-                </span>
                 {step.done ? (
-                  <span className="text-amber-900/70 line-through dark:text-amber-200/60">
+                  <CheckCircle2
+                    size={16}
+                    className="shrink-0 text-emerald-600 dark:text-emerald-400"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Circle
+                    size={16}
+                    className="shrink-0 text-zinc-400 dark:text-zinc-500"
+                    aria-hidden="true"
+                  />
+                )}
+                {step.done ? (
+                  <span className="text-indigo-900/70 line-through dark:text-indigo-200/60">
                     {step.label}
                   </span>
                 ) : (
                   <Link
                     href={step.href}
-                    className="font-medium text-amber-900 hover:underline dark:text-amber-100"
+                    className="font-medium text-indigo-900 hover:underline dark:text-indigo-100"
                   >
                     {step.label}
                   </Link>
@@ -220,24 +241,28 @@ function DashboardView({
           label="Teams"
           value={data.teams.length}
           href="/settings/teams"
+          icon={Building2}
         />
         <StatCard
           label="Calendars"
           value={data.calendars.length}
           href="/settings/calendars"
           warn={data.calendars.length === 0}
+          icon={CalendarDays}
         />
         <StatCard
           label="Invitations"
           value={data.invitations.length}
           href="/settings/teams"
           accent={data.invitations.length > 0}
+          icon={MailOpen}
         />
         <StatCard
           label="Unread"
           value={data.unread}
           href="/notifications"
           accent={data.unread > 0}
+          icon={BellRing}
         />
       </section>
 
@@ -334,23 +359,35 @@ function StatCard({
   href,
   warn = false,
   accent = false,
+  icon: Icon,
 }: {
   label: string;
   value: number;
   href: string;
   warn?: boolean;
   accent?: boolean;
+  icon: LucideIcon;
 }) {
   const numberClass = warn
     ? "text-amber-600 dark:text-amber-400"
     : accent
-      ? "text-emerald-600 dark:text-emerald-400"
+      ? "text-indigo-600 dark:text-indigo-400"
       : "text-zinc-900 dark:text-zinc-50";
+  const iconBg = warn
+    ? "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+    : accent
+      ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300"
+      : "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300";
   return (
     <Link
       href={href}
-      className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition-colors hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
+      className="group rounded-xl border border-zinc-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-indigo-700"
     >
+      <div className="mb-3 flex items-center justify-between">
+        <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${iconBg}`}>
+          <Icon size={16} aria-hidden="true" />
+        </span>
+      </div>
       <div className={`text-2xl font-semibold ${numberClass}`}>{value}</div>
       <div className="text-xs uppercase tracking-wide text-zinc-500">{label}</div>
     </Link>
@@ -421,12 +458,13 @@ function GuestLanding() {
   return (
     <div className="flex min-h-screen flex-1 flex-col bg-zinc-50 dark:bg-zinc-950">
       <header className="px-6 py-5">
-        <span className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          Slotly
-        </span>
+        <Logo size={26} />
       </header>
       <main className="flex flex-1 items-center justify-center px-6 pb-16">
         <div className="w-full max-w-md space-y-6 text-center">
+          <div className="mx-auto inline-block">
+            <LogoMark size={56} />
+          </div>
           <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Find time to meet — without the calendar Tetris
           </h1>
@@ -436,7 +474,10 @@ function GuestLanding() {
           </p>
           <div className="mx-auto flex max-w-xs flex-col gap-2">
             <Link href="/auth/register" className="block">
-              <Button>Create your free account</Button>
+              <Button className="inline-flex items-center justify-center gap-2">
+                Create your free account
+                <ArrowRight size={14} />
+              </Button>
             </Link>
             <Link href="/auth/login" className="block">
               <Button variant="secondary">Sign in</Button>
