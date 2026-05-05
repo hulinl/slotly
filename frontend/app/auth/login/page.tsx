@@ -43,6 +43,11 @@ export default function LoginPage() {
         setError("Please verify your email first. Check your inbox for the confirmation link.");
         return;
       }
+      if (res.status === 429) {
+        // allauth rate-limit hit (default: 5 failed logins per 15 min per email).
+        setError("Too many failed attempts. Please wait a few minutes and try again.");
+        return;
+      }
       setError(res.errors?.[0]?.message ?? "Invalid email or password");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Network error");
