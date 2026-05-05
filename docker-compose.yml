@@ -41,6 +41,69 @@ services:
       - "1025:1025"  # SMTP
       - "8025:8025"  # Web UI
 
+  # Celery worker — picks up jobs enqueued on the broker and runs them
+  # against the Django ORM. Code is bind-mounted from the host so dev
+  # iteration only needs `docker compose restart celery-worker` after a
+  # tasks.py change. (No autoreload by design — kept dev simple.)
+  celery-worker:
+    build: ./backend
+    container_name: slotly-celery-worker
+    restart: unless-stopped
+    command: celery -A slotly_api worker -l info --concurrency=2
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+    environment: &celery-env
+      DJANGO_SETTINGS_MODULE: slotly_api.settings
+      DJANGO_DEBUG: "False"
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-celery-dev-only-INSECURE-replace-me}
+      DATABASE_URL: postgres://slotly:slotly_dev_password@postgres:5432/slotly
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+      EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend
+      EMAIL_HOST: mailhog
+      EMAIL_PORT: "1025"
+      EMAIL_USE_TLS: "False"
+      DEFAULT_FROM_EMAIL: no-reply@slotly.local
+      CALENDAR_URL_ENCRYPTION_KEY: ${CALENDAR_URL_ENCRYPTION_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A slotly_api inspect ping -d celery@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # Celery beat — fires the periodic schedule defined in
+  # slotly_api.settings.CELERY_BEAT_SCHEDULE (every 5 minutes:
+  # calendars.sync_all_due, which in turn enqueues a sync_one per Calendar).
+  # The schedule shelve file is persisted on a named volume so beat doesn't
+  # double-fire jobs across container restarts.
+  celery-beat:
+    build: ./backend
+    container_name: slotly-celery-beat
+    restart: unless-stopped
+    command: celery -A slotly_api beat -l info -s /var/lib/celery/celerybeat-schedule
+    working_dir: /app
+    volumes:
+      - ./backend:/app
+      - celerybeat-data:/var/lib/celery
+    environment: *celery-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      celery-worker:
+        condition: service_started
+
 volumes:
   postgres-data:
   redis-data:
+  celerybeat-data:
