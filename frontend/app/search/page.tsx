@@ -384,6 +384,11 @@ function SearchForm({
         member_ids: Array.from(selected),
         duration_min: duration,
         buffer_min: buffer,
+        // The calendar view spans up to 26 weeks; with 1-hour slots at
+        // 15-min granularity that's ~1300 slot starts max. 2000 leaves
+        // headroom and matches what the profile-availability widget asks
+        // for. The server still caps at 5000.
+        limit: 2000,
         window_start: winStart.toISOString(),
         window_end: winEnd.toISOString(),
       });
@@ -720,7 +725,7 @@ function Results({
           </h2>
           {truncated && (
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-              More available — narrow your search
+              Result truncated — later weeks may look empty
             </span>
           )}
         </div>
