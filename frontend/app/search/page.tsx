@@ -26,8 +26,8 @@ type FormSeed = {
   selectedIds: number[] | null; // null = "default to whole team"
   duration: number;
   buffer: number;
-  startLocal: string; // datetime-local
-  endLocal: string;
+  startDate: string; // YYYY-MM-DD (local)
+  endDate: string;
 };
 
 function defaultSeed(teamId: number): FormSeed {
@@ -36,8 +36,8 @@ function defaultSeed(teamId: number): FormSeed {
     selectedIds: null,
     duration: 60,
     buffer: 0,
-    startLocal: toLocalIso(new Date()),
-    endLocal: toLocalIso(addDays(new Date(), 90)),
+    startDate: toLocalDate(new Date()),
+    endDate: toLocalDate(addDays(new Date(), 90)),
   };
 }
 
@@ -95,8 +95,8 @@ export default function SearchPage() {
       selectedIds: s.member_ids,
       duration: s.duration_min,
       buffer: s.buffer_min,
-      startLocal: toLocalIso(new Date()),
-      endLocal: toLocalIso(addDays(new Date(), s.window_days)),
+      startDate: toLocalDate(new Date()),
+      endDate: toLocalDate(addDays(new Date(), s.window_days)),
     });
   }
 
@@ -106,8 +106,8 @@ export default function SearchPage() {
       selectedIds: r.member_ids,
       duration: r.duration_min,
       buffer: r.buffer_min,
-      startLocal: toLocalIso(new Date(r.window_start)),
-      endLocal: toLocalIso(new Date(r.window_end)),
+      startDate: toLocalDate(new Date(r.window_start)),
+      endDate: toLocalDate(new Date(r.window_end)),
     });
   }
 
@@ -274,8 +274,12 @@ function SearchForm({
   );
   const [duration, setDuration] = useState(initialSeed.duration);
   const [buffer, setBuffer] = useState(initialSeed.buffer);
-  const [start, setStart] = useState<string>(initialSeed.startLocal);
-  const [end, setEnd] = useState<string>(initialSeed.endLocal);
+  const [start, setStart] = useState<string>(initialSeed.startDate);
+  const [end, setEnd] = useState<string>(initialSeed.endDate);
+
+  // Whether the user has manually edited "Until" since the last "From" change.
+  // While untouched, changing "From" auto-bumps "Until" to From + 3 months.
+  const [endTouched, setEndTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ slots: Slot[]; truncated: boolean } | null>(null);
@@ -322,13 +326,22 @@ function SearchForm({
     }
     setSubmitting(true);
     try {
+      // Date-only inputs: search from local 00:00 of "From" until 23:59:59.999
+      // of "Until" so the entire "Until" day is included.
+      const winStart = new Date(`${start}T00:00:00.000`);
+      const winEnd = new Date(`${end}T23:59:59.999`);
+      if (winEnd <= winStart) {
+        setError("“Until” must be on or after “From”.");
+        setSubmitting(false);
+        return;
+      }
       const r = await searchSlots({
         team_id: teamId,
         member_ids: Array.from(selected),
         duration_min: duration,
         buffer_min: buffer,
-        window_start: new Date(start).toISOString(),
-        window_end: new Date(end).toISOString(),
+        window_start: winStart.toISOString(),
+        window_end: winEnd.toISOString(),
       });
       setResult({ slots: r.slots, truncated: r.truncated });
       onSearched();
@@ -438,11 +451,35 @@ function SearchForm({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="start">From</Label>
-            <Input id="start" type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+            <Input
+              id="start"
+              type="date"
+              required
+              value={start}
+              onChange={(e) => {
+                const next = e.target.value;
+                setStart(next);
+                if (!endTouched && next) {
+                  // Auto-shift the "Until" default to From + 3 months until
+                  // the user manually edits it.
+                  setEnd(toLocalDate(addDays(new Date(`${next}T00:00:00`), 90)));
+                }
+              }}
+            />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="end">Until</Label>
-            <Input id="end" type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
+            <Input
+              id="end"
+              type="date"
+              required
+              value={end}
+              min={start}
+              onChange={(e) => {
+                setEnd(e.target.value);
+                setEndTouched(true);
+              }}
+            />
           </div>
         </div>
 
@@ -460,8 +497,8 @@ function SearchForm({
             memberIds={Array.from(selected)}
             duration={duration}
             buffer={buffer}
-            startLocal={start}
-            endLocal={end}
+            startDate={start}
+            endDate={end}
             existingNames={new Set(savedSearches.map((s) => s.name))}
             onSaved={onSearched}
           />
@@ -480,8 +517,8 @@ function SaveCurrentSearch({
   memberIds,
   duration,
   buffer,
-  startLocal,
-  endLocal,
+  startDate,
+  endDate,
   existingNames,
   onSaved,
 }: {
@@ -489,8 +526,8 @@ function SaveCurrentSearch({
   memberIds: number[];
   duration: number;
   buffer: number;
-  startLocal: string;
-  endLocal: string;
+  startDate: string;
+  endDate: string;
   existingNames: Set<string>;
   onSaved: () => void;
 }) {
@@ -500,8 +537,15 @@ function SaveCurrentSearch({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Days from now to `endLocal` — we save the saved-search as a relative window.
-  const windowDays = Math.max(1, Math.round((new Date(endLocal).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+  // Days between today (start of day) and the chosen "Until" — we save the
+  // saved-search as a relative window from the date the user re-loads it.
+  const todayMidnight = new Date();
+  todayMidnight.setHours(0, 0, 0, 0);
+  const endMidnight = new Date(`${endDate}T00:00:00`);
+  const windowDays = Math.max(
+    1,
+    Math.round((endMidnight.getTime() - todayMidnight.getTime()) / (1000 * 60 * 60 * 24)),
+  );
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -537,7 +581,7 @@ function SaveCurrentSearch({
     }
   }
 
-  void startLocal; // displayed only via the relative windowDays
+  void startDate; // displayed only via the relative windowDays
 
   if (!open) {
     return (
@@ -650,12 +694,9 @@ function Results({ slots, truncated }: { slots: Slot[]; truncated: boolean }) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function toLocalIso(d: Date): string {
+function toLocalDate(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
-    `T${pad(d.getHours())}:${pad(d.getMinutes())}`
-  );
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 function addDays(d: Date, n: number): Date {
