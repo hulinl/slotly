@@ -50,7 +50,10 @@ def _conditional_headers(calendar: Calendar) -> dict[str, str]:
 
 
 def _fetch(url: str, headers: dict[str, str]) -> httpx.Response:
-    with httpx.Client(timeout=20.0, follow_redirects=True) as client:
+    # Some published calendars (notably Microsoft 365) take 20–40s on the
+    # first request. We're invoked from a Celery worker, so the wait is
+    # invisible to the user — give the provider room to respond.
+    with httpx.Client(timeout=60.0, follow_redirects=True) as client:
         return client.get(url, headers=headers)
 
 

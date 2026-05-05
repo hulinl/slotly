@@ -65,6 +65,23 @@ export default function CalendarsPage() {
     })().catch(() => router.replace("/auth/login"));
   }, [router]);
 
+  // While any calendar is in the transient "syncing" state, refresh the
+  // list every 3s so the badge flips to OK / sync_failing as soon as the
+  // worker finishes — no manual reload needed.
+  useEffect(() => {
+    const anySyncing = calendars.some((c) => c.status === "syncing");
+    if (!anySyncing) return;
+    const t = setInterval(async () => {
+      try {
+        const fresh = await listCalendars();
+        setCalendars(fresh);
+      } catch {
+        /* transient — try again */
+      }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [calendars]);
+
   if (!loaded) {
     return (
       <PageSkeleton>
@@ -119,14 +136,9 @@ function AddCalendarForm({ onAdded }: { onAdded: (cal: Calendar) => void }) {
     setSubmitting(true);
     try {
       const created = await createCalendar({ name, url });
-      const synced = created.sync;
-      if (synced && synced.status_code >= 400) {
-        setError(`Saved, but the URL returned HTTP ${synced.status_code}. Slotly will keep retrying.`);
-      } else if (synced) {
-        setSuccess(
-          `Connected. Synced ${synced.written} event${synced.written === 1 ? "" : "s"} from the next 3 months.`,
-        );
-      }
+      setSuccess(
+        "Saved. Slotly is reading the calendar — it'll appear in your free/busy data in a few seconds.",
+      );
       onAdded(created);
       setName("");
       setUrl("");

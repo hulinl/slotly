@@ -14,6 +14,7 @@ from .serializers import (
     CalendarUpdateSerializer,
 )
 from .sync import sync_calendar
+from .tasks import sync_one
 
 
 class CalendarViewSet(ModelViewSet):
@@ -42,19 +43,23 @@ class CalendarViewSet(ModelViewSet):
         write = CalendarCreateSerializer(data=request.data, context={"request": request})
         write.is_valid(raise_exception=True)
         calendar = write.save()
-        # First sync runs synchronously so the client gets immediate feedback
-        # ("did the URL we just pasted actually work?"). Subsequent polls are
-        # done by Celery Beat.
-        result = sync_calendar(calendar)
+        # Mark "syncing" up front so the row appears in that state in the
+        # immediate response, then enqueue the actual fetch on the worker.
+        # Microsoft 365 in particular routinely takes 20–40s on the first
+        # request — way too long to keep an HTTP request open.
+        Calendar.objects.filter(pk=calendar.pk).update(status=Calendar.Status.SYNCING)
+        try:
+            sync_one.delay(calendar.pk)
+        except Exception:
+            # Broker unreachable (no Redis in the prod plan) — fall back to
+            # an inline sync so the calendar still gets populated, just
+            # slower for this one request.
+            sync_calendar(calendar)
         calendar.refresh_from_db()
-        body = CalendarReadSerializer(calendar).data
-        body["sync"] = {
-            "status_code": result.status_code,
-            "fetched": result.fetched,
-            "written": result.written,
-            "notes": result.notes,
-        }
-        return Response(body, status=status.HTTP_201_CREATED)
+        return Response(
+            CalendarReadSerializer(calendar).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     @action(detail=True, methods=["post"], url_path="sync")
     def sync(self, request: Request, pk: int | None = None) -> Response:
