@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
+import { DatePicker } from "@/components/DatePicker";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
 import { getSession } from "@/lib/auth";
@@ -451,13 +452,10 @@ function SearchForm({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="start">From</Label>
-            <Input
+            <DatePicker
               id="start"
-              type="date"
-              required
               value={start}
-              onChange={(e) => {
-                const next = e.target.value;
+              onChange={(next) => {
                 setStart(next);
                 if (!endTouched && next) {
                   // Auto-shift the "Until" default to From + 3 months until
@@ -469,14 +467,12 @@ function SearchForm({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="end">Until</Label>
-            <Input
+            <DatePicker
               id="end"
-              type="date"
-              required
               value={end}
               min={start}
-              onChange={(e) => {
-                setEnd(e.target.value);
+              onChange={(next) => {
+                setEnd(next);
                 setEndTouched(true);
               }}
             />
