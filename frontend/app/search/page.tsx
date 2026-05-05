@@ -9,6 +9,7 @@ import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { SlotsCalendar } from "@/components/SlotsCalendar";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
 import { getSession } from "@/lib/auth";
+import { syncAllMyCalendars } from "@/lib/calendars";
 import { fetchHolidaysForRange } from "@/lib/holidays";
 import { getMe } from "@/lib/me";
 import { searchSlots, SearchApiError, type Slot } from "@/lib/search";
@@ -156,13 +157,16 @@ function SearchPageInner() {
       <AuthedHeader email={email} />
 
       <main className="mx-auto max-w-3xl space-y-6 px-6 py-10">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Find a time to meet
-          </h1>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Pick a team and the people you need; Slotly returns every shared free slot in your search window.
-          </p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
+              Find a time to meet
+            </h1>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Pick a team and the people you need; Slotly returns every shared free slot in your search window.
+            </p>
+          </div>
+          <RefreshMyCalendarsButton />
         </div>
 
         {teams.length === 0 ? (
@@ -192,6 +196,46 @@ function SearchPageInner() {
           </>
         )}
       </main>
+    </div>
+  );
+}
+
+function RefreshMyCalendarsButton() {
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+
+  async function onClick() {
+    setBusy(true);
+    setDone(null);
+    try {
+      const r = await syncAllMyCalendars();
+      setDone(
+        r.queued === 0
+          ? "No calendars to refresh."
+          : `Refreshing ${r.queued} calendar${r.queued === 1 ? "" : "s"} — try search in a few seconds.`,
+      );
+    } catch (err) {
+      setDone(err instanceof Error ? err.message : "Refresh failed");
+    } finally {
+      setBusy(false);
+      setTimeout(() => setDone(null), 6000);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={busy}
+        className="rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+        title="Force-pull your connected calendars before searching"
+      >
+        {busy ? "Refreshing…" : "Refresh my calendars"}
+      </button>
+      {done && (
+        <span className="text-right text-[11px] text-zinc-500 dark:text-zinc-400">{done}</span>
+      )}
     </div>
   );
 }

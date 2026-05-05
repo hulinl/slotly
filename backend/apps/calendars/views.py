@@ -75,3 +75,26 @@ class CalendarViewSet(ModelViewSet):
             "notes": result.notes,
         }
         return Response(body)
+
+    @action(detail=False, methods=["post"], url_path="sync-all")
+    def sync_all_mine(self, request: Request) -> Response:
+        """
+        Force-refresh every calendar the caller owns (include_in_busy=True).
+        Used by the "Refresh my calendars" button on /search so users can
+        pull just-changed Google/Outlook events without waiting for the
+        next Beat tick. Other team members' data is unaffected — only
+        the calendar's owner can trigger their own sync.
+        """
+        ids = list(
+            Calendar.objects.filter(owner=request.user, include_in_busy=True)
+            .values_list("pk", flat=True),
+        )
+        Calendar.objects.filter(pk__in=ids).update(status=Calendar.Status.SYNCING)
+        for cal_id in ids:
+            try:
+                sync_one.delay(cal_id)
+            except Exception:
+                # Broker unreachable — degrade to inline.
+                cal = Calendar.objects.get(pk=cal_id)
+                sync_calendar(cal)
+        return Response({"queued": len(ids)})

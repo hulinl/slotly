@@ -79,3 +79,9 @@ export function deleteCalendar(id: number): Promise<void> {
 export function syncCalendar(id: number): Promise<Calendar> {
   return request<Calendar>(`/api/calendars/${id}/sync`, { method: "POST" });
 }
+
+/** Force-refresh every calendar the caller owns. Async — calendars enter
+ * "syncing" state and flip to OK / sync_failing when the worker finishes. */
+export function syncAllMyCalendars(): Promise<{ queued: number }> {
+  return request<{ queued: number }>(`/api/calendars/sync-all`, { method: "POST" });
+}
