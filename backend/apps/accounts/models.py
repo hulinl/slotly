@@ -56,6 +56,9 @@ class User(AbstractUser):
     phone = models.CharField(max_length=32, blank=True)
     avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
     working_hours = models.JSONField(default=default_working_hours)
+    # ISO 3166-1 alpha-2 country code; drives public-holiday markers in the
+    # calendar UI. Default CZ (current target market). User-changeable.
+    country = models.CharField(max_length=2, default="CZ")
     # Per-event × per-channel matrix (PRD §5.6). Initialized at signup via
     # apps.notifications.signals. Empty dict for legacy users; the dispatcher
     # treats a missing event key as "all on", matching the default.

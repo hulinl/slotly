@@ -25,9 +25,36 @@ export type Me = {
   last_name: string;
   phone: string;
   working_hours: WorkingHours;
+  country: string;
 };
 
-export type MePatch = Partial<Pick<Me, "first_name" | "last_name" | "phone" | "working_hours">>;
+export type MePatch = Partial<
+  Pick<Me, "first_name" | "last_name" | "phone" | "working_hours" | "country">
+>;
+
+export const SUPPORTED_COUNTRIES: Array<{ code: string; name: string }> = [
+  { code: "CZ", name: "Czech Republic" },
+  { code: "SK", name: "Slovakia" },
+  { code: "AT", name: "Austria" },
+  { code: "DE", name: "Germany" },
+  { code: "PL", name: "Poland" },
+  { code: "HU", name: "Hungary" },
+  { code: "FR", name: "France" },
+  { code: "IT", name: "Italy" },
+  { code: "ES", name: "Spain" },
+  { code: "GB", name: "United Kingdom" },
+  { code: "IE", name: "Ireland" },
+  { code: "NL", name: "Netherlands" },
+  { code: "BE", name: "Belgium" },
+  { code: "US", name: "United States" },
+  { code: "CA", name: "Canada" },
+  { code: "AU", name: "Australia" },
+  { code: "NZ", name: "New Zealand" },
+  { code: "NO", name: "Norway" },
+  { code: "SE", name: "Sweden" },
+  { code: "DK", name: "Denmark" },
+  { code: "FI", name: "Finland" },
+];
 
 export type FieldErrors = Record<string, unknown>;
 

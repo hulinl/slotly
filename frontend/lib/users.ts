@@ -9,6 +9,7 @@ export type Teammate = {
   last_name: string;
   phone: string;
   working_hours: WorkingHours;
+  country: string;
   shared_team_ids: number[];
 };
 

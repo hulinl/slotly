@@ -18,7 +18,18 @@ const DEFAULT_MAX_HOUR = 19;
 
 type FreeInterval = { start: Date; end: Date };
 
-export function SlotsCalendar({ slots, durationMin }: { slots: Slot[]; durationMin: number }) {
+export function SlotsCalendar({
+  slots,
+  durationMin,
+  holidays,
+}: {
+  slots: Slot[];
+  durationMin: number;
+  /** YYYY-MM-DD → public-holiday name. Days listed get an amber tint and a
+   * small flag in the header so users notice when the slot they're picking
+   * lands on a national holiday. */
+  holidays?: Map<string, string>;
+}) {
   const intervalsByDay = useMemo(() => groupAndMerge(slots), [slots]);
 
   // Default the calendar to the first week that contains a slot.
@@ -109,13 +120,17 @@ export function SlotsCalendar({ slots, durationMin }: { slots: Slot[]; durationM
         <div />
         {weekDays.map((day) => {
           const isToday = sameDay(day, new Date());
+          const holidayName = holidays?.get(toDayKey(day));
+          const bg = holidayName
+            ? "bg-amber-50 dark:bg-amber-950/30"
+            : isToday
+              ? "bg-zinc-50 dark:bg-zinc-800/30"
+              : "";
           return (
             <div
               key={day.toISOString()}
-              className={
-                "border-l border-zinc-100 px-2 py-2 text-center dark:border-zinc-800 " +
-                (isToday ? "bg-zinc-50 dark:bg-zinc-800/30" : "")
-              }
+              className={`border-l border-zinc-100 px-2 py-2 text-center dark:border-zinc-800 ${bg}`}
+              title={holidayName ? `Public holiday: ${holidayName}` : undefined}
             >
               <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                 {day.toLocaleDateString(undefined, { weekday: "short" })}
@@ -130,6 +145,11 @@ export function SlotsCalendar({ slots, durationMin }: { slots: Slot[]; durationM
               >
                 {day.toLocaleDateString(undefined, { day: "numeric", month: "short" })}
               </div>
+              {holidayName && (
+                <div className="mt-0.5 truncate text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                  ⚑ {holidayName}
+                </div>
+              )}
             </div>
           );
         })}
@@ -153,10 +173,14 @@ export function SlotsCalendar({ slots, durationMin }: { slots: Slot[]; durationM
         {/* day columns */}
         {weekDays.map((day) => {
           const intervals = intervalsByDay.get(toDayKey(day)) ?? [];
+          const isHoliday = holidays?.has(toDayKey(day)) ?? false;
           return (
             <div
               key={day.toISOString()}
-              className="relative border-l border-zinc-100 dark:border-zinc-800"
+              className={
+                "relative border-l border-zinc-100 dark:border-zinc-800 " +
+                (isHoliday ? "bg-amber-50/40 dark:bg-amber-950/10" : "")
+              }
               style={{ height: hours.length * HOUR_PX }}
             >
               {/* hour gridlines */}

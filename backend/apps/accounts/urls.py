@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .holidays_view import HolidaysView
 from .views import DeleteMeView, MeView, TeammateView, TeammatesIndexView
 
 urlpatterns = [
@@ -10,4 +11,5 @@ urlpatterns = [
     path("me/delete", DeleteMeView.as_view(), name="me-delete"),
     path("users", TeammatesIndexView.as_view(), name="teammate-index"),
     path("users/<int:pk>", TeammateView.as_view(), name="teammate"),
+    path("holidays", HolidaysView.as_view(), name="holidays"),
 ]

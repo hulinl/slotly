@@ -17,6 +17,7 @@ import {
   type Unavailability,
 } from "@/lib/availability";
 import { WEEKDAYS, type Weekday } from "@/lib/me";
+import { fetchHolidaysForRange } from "@/lib/holidays";
 import { searchSlots, type Slot } from "@/lib/search";
 import { getTeammate, UsersApiError, type Teammate } from "@/lib/users";
 
@@ -43,6 +44,8 @@ export default function TeammateProfilePage() {
   const [slots, setSlots] = useState<Slot[] | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
+
+  const [holidays, setHolidays] = useState<Map<string, string>>(new Map());
 
   const [unavailabilities, setUnavailabilities] = useState<Unavailability[] | null>(null);
   const isMe = meId !== null && meId === userId;
@@ -104,6 +107,12 @@ export default function TeammateProfilePage() {
         setSearchError(err instanceof Error ? err.message : "Couldn't load availability."),
       )
       .finally(() => setSearching(false));
+
+    // Fetch public holidays for the visible range, in the *teammate's* country
+    // (since this view is about their schedule, not the viewer's locale).
+    fetchHolidaysForRange(now.toISOString(), end.toISOString(), user.country)
+      .then(setHolidays)
+      .catch(() => setHolidays(new Map()));
   }, [user]);
 
   if (!meEmail) {
@@ -230,7 +239,7 @@ export default function TeammateProfilePage() {
           {searching && !slots ? (
             <CardSkeleton rows={6} />
           ) : slots && slots.length > 0 ? (
-            <SlotsCalendar slots={slots} durationMin={60} />
+            <SlotsCalendar slots={slots} durationMin={60} holidays={holidays} />
           ) : (
             <section className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
               {user.shared_team_ids.length === 0

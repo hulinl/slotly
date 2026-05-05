@@ -16,6 +16,7 @@ import {
   type Weekday,
   WEEKDAYS,
   MeApiError,
+  SUPPORTED_COUNTRIES,
 } from "@/lib/me";
 
 const DAY_LABEL: Record<Weekday, string> = {
@@ -93,6 +94,7 @@ function ProfileCard({ me, onSaved }: { me: Me; onSaved: (m: Me) => void }) {
   const [firstName, setFirstName] = useState(me.first_name);
   const [lastName, setLastName] = useState(me.last_name);
   const [phone, setPhone] = useState(me.phone);
+  const [country, setCountry] = useState(me.country || "CZ");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -103,7 +105,12 @@ function ProfileCard({ me, onSaved }: { me: Me; onSaved: (m: Me) => void }) {
     setError(null);
     setSuccess(null);
     try {
-      const updated = await patchMe({ first_name: firstName, last_name: lastName, phone });
+      const updated = await patchMe({
+        first_name: firstName,
+        last_name: lastName,
+        phone,
+        country,
+      });
       onSaved(updated);
       setSuccess("Saved.");
     } catch (err) {
@@ -135,6 +142,24 @@ function ProfileCard({ me, onSaved }: { me: Me; onSaved: (m: Me) => void }) {
             onChange={(e) => setPhone(e.target.value)}
             placeholder="+420 ..."
           />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="country">Country</Label>
+          <select
+            id="country"
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+            className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+          >
+            {SUPPORTED_COUNTRIES.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            Drives public-holiday markers in the calendar grid.
+          </p>
         </div>
         <FormError message={error} />
         <FormSuccess message={success} />

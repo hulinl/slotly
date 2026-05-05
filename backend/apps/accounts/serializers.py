@@ -48,13 +48,27 @@ class WorkingHoursField(serializers.JSONField):
         return {day: _validate_day(day, data[day]) for day in WEEKDAYS}
 
 
+SUPPORTED_COUNTRIES = (
+    "CZ", "SK", "AT", "DE", "PL", "HU", "FR", "IT", "ES", "GB",
+    "IE", "NL", "BE", "US", "CA", "AU", "NZ", "NO", "SE", "DK", "FI",
+)
+
+
 class MeSerializer(serializers.ModelSerializer):
     working_hours = WorkingHoursField()
 
     class Meta:
         model = User
-        fields = ("email", "first_name", "last_name", "phone", "working_hours")
+        fields = ("email", "first_name", "last_name", "phone", "working_hours", "country")
         read_only_fields = ("email",)
+
+    def validate_country(self, value: str) -> str:
+        v = (value or "").strip().upper()
+        if v not in SUPPORTED_COUNTRIES:
+            raise serializers.ValidationError(
+                f"Unsupported country code. Pick one of: {', '.join(SUPPORTED_COUNTRIES)}",
+            )
+        return v
 
 
 class TeammateSerializer(serializers.ModelSerializer):
@@ -71,6 +85,7 @@ class TeammateSerializer(serializers.ModelSerializer):
             "last_name",
             "phone",
             "working_hours",
+            "country",
             "shared_team_ids",
         )
         read_only_fields = fields

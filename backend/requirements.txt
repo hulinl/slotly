@@ -24,6 +24,7 @@ icalendar==6.1.0
 recurring-ical-events==3.4.1   # RRULE/EXDATE expansion on top of icalendar
 httpx==0.28.1
 python-dateutil==2.9.0.post0
+holidays==0.62                 # public-holiday data per country
 
 # --- Production server ---
 gunicorn==23.0.0

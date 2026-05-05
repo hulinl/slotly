@@ -9,6 +9,8 @@ import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { SlotsCalendar } from "@/components/SlotsCalendar";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
 import { getSession } from "@/lib/auth";
+import { fetchHolidaysForRange } from "@/lib/holidays";
+import { getMe } from "@/lib/me";
 import { searchSlots, SearchApiError, type Slot } from "@/lib/search";
 import {
   createSavedSearch,
@@ -64,6 +66,8 @@ function SearchPageInner() {
   const [seed, setSeed] = useState<FormSeed | null>(null);
   const [seedKey, setSeedKey] = useState(0);
 
+  const [country, setCountry] = useState<string>("CZ");
+
   async function refreshPresets() {
     const [s, r] = await Promise.all([listSavedSearches(), listRecentSearches()]);
     setSavedSearches(s);
@@ -78,8 +82,9 @@ function SearchPageInner() {
         return;
       }
       setEmail(session.data.user.email);
-      const fetchedTeams = await listTeams();
+      const [fetchedTeams, me] = await Promise.all([listTeams(), getMe().catch(() => null)]);
       setTeams(fetchedTeams);
+      if (me?.country) setCountry(me.country);
       if (fetchedTeams.length > 0) {
         const [savedList, recentList] = await Promise.all([
           listSavedSearches(),
@@ -181,6 +186,7 @@ function SearchPageInner() {
                 initialSeed={seed}
                 onSearched={refreshPresets}
                 savedSearches={savedSearches}
+                country={country}
               />
             )}
           </>
@@ -296,11 +302,13 @@ function SearchForm({
   initialSeed,
   onSearched,
   savedSearches,
+  country,
 }: {
   teams: TeamSummary[];
   initialSeed: FormSeed;
   onSearched: () => void;
   savedSearches: SavedSearch[];
+  country: string;
 }) {
   const [teamId, setTeamId] = useState<number>(initialSeed.teamId);
   const [team, setTeam] = useState<TeamDetail | null>(null);
@@ -318,6 +326,7 @@ function SearchForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ slots: Slot[]; truncated: boolean } | null>(null);
+  const [holidays, setHolidays] = useState<Map<string, string>>(new Map());
 
   // Load team detail (member roster) whenever the team changes. If no
   // explicit selection seed was provided (e.g. user just opened the page),
@@ -380,6 +389,10 @@ function SearchForm({
       });
       setResult({ slots: r.slots, truncated: r.truncated });
       onSearched();
+      // Fetch holidays for the search range so the calendar grid can mark them.
+      fetchHolidaysForRange(winStart.toISOString(), winEnd.toISOString(), country)
+        .then(setHolidays)
+        .catch(() => setHolidays(new Map()));
     } catch (err) {
       setError(err instanceof SearchApiError ? err.message : "Search failed");
     } finally {
@@ -521,7 +534,7 @@ function SearchForm({
 
       {result && (
         <>
-          <Results slots={result.slots} truncated={result.truncated} durationMin={duration} />
+          <Results slots={result.slots} truncated={result.truncated} durationMin={duration} holidays={holidays} />
           <SaveCurrentSearch
             teamId={teamId}
             memberIds={Array.from(selected)}
@@ -673,10 +686,12 @@ function Results({
   slots,
   truncated,
   durationMin,
+  holidays,
 }: {
   slots: Slot[];
   truncated: boolean;
   durationMin: number;
+  holidays: Map<string, string>;
 }) {
   const [view, setView] = useState<"calendar" | "list">("calendar");
   const grouped = useMemo(() => groupByDay(slots), [slots]);
@@ -739,7 +754,7 @@ function Results({
       </header>
 
       {view === "calendar" ? (
-        <SlotsCalendar slots={slots} durationMin={durationMin} />
+        <SlotsCalendar slots={slots} durationMin={durationMin} holidays={holidays} />
       ) : (
         <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <div className="space-y-4">
