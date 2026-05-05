@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from django.contrib.auth import logout
+from django.contrib.auth import get_user_model, logout
 from django.db import models, transaction
+from django.shortcuts import get_object_or_404
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -12,7 +13,9 @@ from apps.notifications.dispatch import notify
 from apps.notifications.models import Notification
 from apps.teams.models import Membership, Team
 
-from .serializers import MeSerializer
+from .serializers import MeSerializer, TeammateSerializer
+
+User = get_user_model()
 
 
 class MeView(APIView):
@@ -114,6 +117,37 @@ def _sole_admin_team_ids(user) -> list[int]:
         .filter(admin_count_calc=1)
         .values_list("pk", flat=True),
     )
+
+
+class TeammateView(APIView):
+    """
+    GET /api/users/<id> — public profile of a teammate.
+
+    Visible only when the caller and the target share at least one team
+    (PRD §5.5). The caller can also fetch their own profile this way.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request, pk: int) -> Response:
+        target = get_object_or_404(User, pk=pk)
+        shared = list(
+            Team.objects.filter(memberships__user=request.user)
+            .filter(memberships__user=target)
+            .distinct()
+            .values_list("pk", flat=True),
+        )
+        if not shared and target.pk != request.user.pk:
+            return Response(
+                {"detail": "You don't share any team with this user."},
+                status=403,
+            )
+        return Response(
+            TeammateSerializer(
+                target,
+                context={"shared_team_ids": shared},
+            ).data,
+        )
 
 
 def _delete_team_with_notifications(team: Team, *, exclude_user_id: int | None = None) -> None:

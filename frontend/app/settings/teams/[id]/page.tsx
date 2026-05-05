@@ -185,14 +185,18 @@ function RosterCard({
       <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
         {team.members.map((m) => (
           <li key={m.user_id} className="flex items-center gap-3 py-3">
-            <div className="min-w-0 flex-1">
+            <Link
+              href={`/people/${m.user_id}`}
+              className="min-w-0 flex-1 hover:underline"
+              title="View profile"
+            >
               <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-50">
                 {(m.first_name || m.last_name) ? `${m.first_name} ${m.last_name}`.trim() : m.email}
               </p>
               {(m.first_name || m.last_name) && (
                 <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{m.email}</p>
               )}
-            </div>
+            </Link>
             <span className="rounded-full border border-zinc-200 px-2 py-0.5 text-xs text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
               {m.role}
             </span>

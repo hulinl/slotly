@@ -55,3 +55,26 @@ class MeSerializer(serializers.ModelSerializer):
         model = User
         fields = ("email", "first_name", "last_name", "phone", "working_hours")
         read_only_fields = ("email",)
+
+
+class TeammateSerializer(serializers.ModelSerializer):
+    """Public profile shape, returned only when the caller shares a team."""
+
+    shared_team_ids = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "email",
+            "first_name",
+            "last_name",
+            "phone",
+            "working_hours",
+            "shared_team_ids",
+        )
+        read_only_fields = fields
+
+    def get_shared_team_ids(self, obj: User) -> list[int]:
+        # Populated by the view via context to avoid an extra query per request.
+        return self.context.get("shared_team_ids", [])
