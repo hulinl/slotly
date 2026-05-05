@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { DatePicker } from "@/components/DatePicker";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
+import { SlotsCalendar } from "@/components/SlotsCalendar";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import { searchSlots, SearchApiError, type Slot } from "@/lib/search";
@@ -369,7 +370,7 @@ function SearchForm({
           >
             {teams.map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name} ({t.member_count})
+                {t.name}
               </option>
             ))}
           </select>
@@ -487,7 +488,7 @@ function SearchForm({
 
       {result && (
         <>
-          <Results slots={result.slots} truncated={result.truncated} />
+          <Results slots={result.slots} truncated={result.truncated} durationMin={duration} />
           <SaveCurrentSearch
             teamId={teamId}
             memberIds={Array.from(selected)}
@@ -635,7 +636,16 @@ function SaveCurrentSearch({
 
 // ---------------------------------------------------------------------------
 
-function Results({ slots, truncated }: { slots: Slot[]; truncated: boolean }) {
+function Results({
+  slots,
+  truncated,
+  durationMin,
+}: {
+  slots: Slot[];
+  truncated: boolean;
+  durationMin: number;
+}) {
+  const [view, setView] = useState<"calendar" | "list">("calendar");
   const grouped = useMemo(() => groupByDay(slots), [slots]);
 
   if (slots.length === 0) {
@@ -647,41 +657,84 @@ function Results({ slots, truncated }: { slots: Slot[]; truncated: boolean }) {
   }
 
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <header className="mb-3 flex items-center justify-between">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-          Found {slots.length} slot{slots.length === 1 ? "" : "s"}
-        </h2>
-        {truncated && (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-            More available — narrow your search
-          </span>
-        )}
+    <section className="space-y-3">
+      <header className="flex items-center justify-between">
+        <div className="flex items-baseline gap-3">
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+            Found {slots.length} slot{slots.length === 1 ? "" : "s"}
+          </h2>
+          {truncated && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+              More available — narrow your search
+            </span>
+          )}
+        </div>
+        <div
+          role="tablist"
+          aria-label="Result view"
+          className="inline-flex rounded-md border border-zinc-200 bg-white text-xs font-medium dark:border-zinc-800 dark:bg-zinc-900"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "calendar"}
+            onClick={() => setView("calendar")}
+            className={
+              "rounded-l-md px-3 py-1.5 " +
+              (view === "calendar"
+                ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+                : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800")
+            }
+          >
+            Calendar
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "list"}
+            onClick={() => setView("list")}
+            className={
+              "rounded-r-md px-3 py-1.5 " +
+              (view === "list"
+                ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+                : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800")
+            }
+          >
+            List
+          </button>
+        </div>
       </header>
-      <div className="space-y-4">
-        {grouped.map(([day, daySlots]) => (
-          <div key={day}>
-            <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-500">{day}</h3>
-            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
-              {daySlots.map((s) => (
-                <li
-                  key={s.start}
-                  className="flex items-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800"
-                >
-                  <span className="flex-1 font-medium">{formatTimeRange(s)}</span>
-                  <button
-                    onClick={() => copyToClipboard(`${day}, ${formatTimeRange(s)}`)}
-                    className="text-xs text-zinc-500 underline dark:text-zinc-400"
-                    type="button"
-                  >
-                    Copy
-                  </button>
-                </li>
-              ))}
-            </ul>
+
+      {view === "calendar" ? (
+        <SlotsCalendar slots={slots} durationMin={durationMin} />
+      ) : (
+        <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="space-y-4">
+            {grouped.map(([day, daySlots]) => (
+              <div key={day}>
+                <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-500">{day}</h3>
+                <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
+                  {daySlots.map((s) => (
+                    <li
+                      key={s.start}
+                      className="flex items-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800"
+                    >
+                      <span className="flex-1 font-medium">{formatTimeRange(s)}</span>
+                      <button
+                        onClick={() => copyToClipboard(`${day}, ${formatTimeRange(s)}`)}
+                        className="text-xs text-zinc-500 underline dark:text-zinc-400"
+                        type="button"
+                      >
+                        Copy
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      )}
     </section>
   );
 }
