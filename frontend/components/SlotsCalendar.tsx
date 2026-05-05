@@ -54,71 +54,54 @@ export function SlotsCalendar({ slots, durationMin }: { slots: Slot[]; durationM
   const hours = Array.from({ length: maxHour - minHour }, (_, i) => minHour + i);
 
   const totalSlotsThisWeek = visibleIntervals.length;
-  const allWeekKeys = Array.from(new Set(sortedDayKeys.map((k) => toDayKey(mondayOf(parseDayKey(k)))))).sort();
-  const weekIndex = allWeekKeys.indexOf(toDayKey(weekStart));
 
   function nudgeWeek(delta: -1 | 1) {
     setWeekStart((w) => addDays(w, 7 * delta));
   }
 
-  function jumpToWeekWithSlots(direction: -1 | 1) {
-    if (allWeekKeys.length === 0) return;
-    const currentIdx = allWeekKeys.indexOf(toDayKey(weekStart));
-    let targetIdx: number;
-    if (currentIdx === -1) {
-      targetIdx = direction > 0 ? 0 : allWeekKeys.length - 1;
-    } else {
-      targetIdx = Math.min(allWeekKeys.length - 1, Math.max(0, currentIdx + direction));
-    }
-    setWeekStart(parseDayKey(allWeekKeys[targetIdx]));
-  }
+  const isCurrentWeek = sameDay(weekStart, mondayOf(new Date()));
+  const weekEnd = addDays(weekStart, 6);
+  const isoWk = isoWeekNumber(weekStart);
+  const rangeLabel = formatWeekRange(weekStart, weekEnd);
 
   return (
     <section className="rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       {/* navigation */}
-      <header className="flex items-center justify-between border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
-        <div className="flex items-center gap-2">
+      <header className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => nudgeWeek(-1)}
             aria-label="Previous week"
-            className="rounded-md border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            className="rounded-md border border-zinc-200 px-2.5 py-1 text-sm leading-none hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
             ‹
           </button>
           <button
             type="button"
-            onClick={() => jumpToWeekWithSlots(-1)}
-            disabled={weekIndex <= 0}
-            className="rounded-md border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-30 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            onClick={() => setWeekStart(mondayOf(new Date()))}
+            disabled={isCurrentWeek}
+            className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
-            «
-          </button>
-        </div>
-        <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-          Week of {weekStart.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}
-          {totalSlotsThisWeek === 0 && (
-            <span className="ml-2 text-xs text-zinc-500">— no slots</span>
-          )}
-        </h3>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => jumpToWeekWithSlots(1)}
-            disabled={weekIndex >= 0 && weekIndex >= allWeekKeys.length - 1}
-            className="rounded-md border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-30 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          >
-            »
+            Today
           </button>
           <button
             type="button"
             onClick={() => nudgeWeek(1)}
             aria-label="Next week"
-            className="rounded-md border border-zinc-200 px-2 py-1 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            className="rounded-md border border-zinc-200 px-2.5 py-1 text-sm leading-none hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
             ›
           </button>
         </div>
+        <h3 className="min-w-0 truncate text-right text-sm font-medium text-zinc-900 dark:text-zinc-50">
+          Week {isoWk}
+          <span className="text-zinc-400"> · </span>
+          <span className="font-normal text-zinc-600 dark:text-zinc-400">{rangeLabel}</span>
+          {totalSlotsThisWeek === 0 && (
+            <span className="ml-2 text-xs text-zinc-500">no slots</span>
+          )}
+        </h3>
       </header>
 
       {/* day headers */}
@@ -286,4 +269,35 @@ function toMinutes(d: Date): number {
 
 function formatHM(d: Date): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+/** ISO 8601 week number (Czech "kalendářní týden"). Monday-based, the week
+ * containing the year's first Thursday is week 1. */
+function isoWeekNumber(d: Date): number {
+  const target = new Date(d.valueOf());
+  target.setHours(0, 0, 0, 0);
+  // Move target to Thursday of the same ISO week.
+  const dayOfWeek = (target.getDay() + 6) % 7; // 0 = Mon
+  target.setDate(target.getDate() - dayOfWeek + 3);
+  const firstThursday = new Date(target.getFullYear(), 0, 4);
+  const diffDays = (target.getTime() - firstThursday.getTime()) / 86_400_000;
+  return 1 + Math.floor(diffDays / 7);
+}
+
+function formatWeekRange(start: Date, end: Date): string {
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const sameMonth = sameYear && start.getMonth() === end.getMonth();
+  const day = (d: Date) => d.getDate();
+  const monthShort = (d: Date) => d.toLocaleDateString(undefined, { month: "short" });
+  const year = (d: Date) => d.getFullYear();
+  if (sameMonth) {
+    // "5–11 May 2026"
+    return `${day(start)}–${day(end)} ${monthShort(end)} ${year(end)}`;
+  }
+  if (sameYear) {
+    // "29 Apr – 5 May 2026"
+    return `${day(start)} ${monthShort(start)} – ${day(end)} ${monthShort(end)} ${year(end)}`;
+  }
+  // "29 Dec 2025 – 4 Jan 2026"
+  return `${day(start)} ${monthShort(start)} ${year(start)} – ${day(end)} ${monthShort(end)} ${year(end)}`;
 }
