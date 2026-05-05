@@ -177,9 +177,7 @@ function AddCalendarForm({ onAdded }: { onAdded: (cal: Calendar) => void }) {
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://…/basic.ics or webcal://…"
           />
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            <ProviderHelp />
-          </p>
+          <ProviderHelp />
         </div>
         <FormError message={error} />
         <FormSuccess message={success} />

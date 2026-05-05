@@ -96,8 +96,20 @@ docker compose down -v
 ### Running tests
 
 ```bash
+# Django unit tests
 cd backend
 .venv/bin/python manage.py test
+
+# HTTP-level E2E smoke (87 checks against the live stack)
+.venv/bin/python ../scripts/e2e.py
+
+# Browser-level UI smoke — loads every page in headless Chromium
+# and asserts no console.error / pageerror events. Catches React
+# hydration mismatches and DOM nesting violations the HTTP suite
+# can't see.
+.venv/bin/pip install playwright            # one-time
+.venv/bin/playwright install chromium       # one-time, ~150 MB
+.venv/bin/python ../scripts/smoke_browser.py
 ```
 
 ## Status
