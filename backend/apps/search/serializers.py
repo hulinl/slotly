@@ -21,6 +21,10 @@ class SearchInputSerializer(serializers.Serializer):
     window_start = serializers.DateTimeField(required=False)
     window_end = serializers.DateTimeField(required=False)
     buffer_min = serializers.IntegerField(min_value=0, max_value=4 * 60, default=0)
+    # Profile widgets visualize multiple weeks at once and need more headroom
+    # than the default search-results card. Hard ceiling 5000 keeps the JSON
+    # payload bounded.
+    limit = serializers.IntegerField(min_value=1, max_value=5000, default=100)
 
     def validate(self, attrs: dict) -> dict:
         attrs.setdefault("window_start", timezone.now())

@@ -9,6 +9,9 @@ export type SearchInput = {
   window_start?: string;
   window_end?: string;
   buffer_min?: number;
+  /** Max slots returned. Default 100 (search results card); the profile
+   * widget visualizing 8 weeks needs more (≈ 2000). Server caps at 5000. */
+  limit?: number;
 };
 
 export type SearchResult = {

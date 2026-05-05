@@ -95,6 +95,7 @@ export default function TeammateProfilePage() {
       team_id: teamId,
       member_ids: [user.id],
       duration_min: 60,
+      limit: 2000,
       window_start: now.toISOString(),
       window_end: end.toISOString(),
     })

@@ -98,7 +98,7 @@ class SearchView(APIView):
             duration=timedelta(minutes=data["duration_min"]),
             buffer=timedelta(minutes=data["buffer_min"]),
             tz=ZoneInfo(settings.TIME_ZONE),
-            max_results=100,
+            max_results=data["limit"],
         )
 
         # Record to history (best-effort; never block the search response).

@@ -193,11 +193,82 @@ function AddCalendarForm({ onAdded }: { onAdded: (cal: Calendar) => void }) {
 
 function ProviderHelp() {
   return (
-    <span>
-      <strong>Google:</strong> Settings → calendar → &ldquo;Secret address in iCal format&rdquo;.{" "}
-      <strong>Apple:</strong> share calendar publicly and copy the URL.{" "}
-      <strong>Outlook:</strong> Calendar → Sharing → Publish calendar → ICS link.
-    </span>
+    <details className="rounded-md border border-zinc-200 bg-zinc-50/50 px-3 py-2 text-zinc-600 open:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/40 dark:text-zinc-300">
+      <summary className="cursor-pointer text-xs font-medium text-zinc-700 hover:underline dark:text-zinc-200">
+        How do I find my ICS URL?
+      </summary>
+      <div className="mt-3 space-y-3 text-xs leading-relaxed">
+        <div>
+          <p className="font-semibold text-zinc-900 dark:text-zinc-50">Google Calendar</p>
+          <ol className="mt-1 list-decimal space-y-0.5 pl-5">
+            <li>
+              Open{" "}
+              <a className="underline" href="https://calendar.google.com/calendar/u/0/r/settings" target="_blank" rel="noreferrer">
+                Google Calendar settings
+              </a>{" "}
+              and pick the calendar you want to share.
+            </li>
+            <li>
+              Scroll to <em>Integrate calendar</em> → <em>Secret address in iCal format</em>.
+            </li>
+            <li>Copy that URL and paste it above.</li>
+          </ol>
+        </div>
+        <div>
+          <p className="font-semibold text-zinc-900 dark:text-zinc-50">Microsoft 365 / Outlook</p>
+          <ol className="mt-1 list-decimal space-y-0.5 pl-5">
+            <li>
+              Open{" "}
+              <a className="underline" href="https://outlook.office.com/calendar/options/calendar/SharedCalendars" target="_blank" rel="noreferrer">
+                Outlook web → Settings → Shared calendars
+              </a>
+              .
+            </li>
+            <li>
+              Under <em>Publish a calendar</em>, pick the calendar (usually
+              &quot;Calendar&quot;) and choose <em>Can view all details</em>. Click <em>Publish</em>.
+            </li>
+            <li>
+              Two links appear — copy the one that ends in{" "}
+              <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-700">.ics</code> and paste it above.
+            </li>
+          </ol>
+          <p className="mt-1.5 rounded bg-amber-50 px-2 py-1 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+            ⚠ Many corporate Microsoft 365 tenants disable calendar publishing
+            by IT policy. If <em>Publish a calendar</em> is missing or greyed out,
+            ask your admin or use a personal Outlook.com account for now —
+            we&apos;ll add OAuth login (which doesn&apos;t need publishing) in a
+            later release.
+          </p>
+        </div>
+        <div>
+          <p className="font-semibold text-zinc-900 dark:text-zinc-50">Apple iCloud</p>
+          <ol className="mt-1 list-decimal space-y-0.5 pl-5">
+            <li>
+              Sign in to{" "}
+              <a className="underline" href="https://www.icloud.com/calendar" target="_blank" rel="noreferrer">
+                icloud.com/calendar
+              </a>
+              .
+            </li>
+            <li>
+              Hover the calendar in the left sidebar → click the share icon → toggle <em>Public Calendar</em>.
+            </li>
+            <li>
+              Click <em>Copy Link</em>. If the URL starts with{" "}
+              <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-700">webcal://</code> we&apos;ll convert it automatically.
+            </li>
+          </ol>
+        </div>
+        <div>
+          <p className="font-semibold text-zinc-900 dark:text-zinc-50">Other / generic ICS</p>
+          <p className="mt-1">
+            Any HTTPS URL ending in{" "}
+            <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-700">.ics</code> that returns valid iCalendar (RFC 5545) data works. Slotly polls it every 5 minutes.
+          </p>
+        </div>
+      </div>
+    </details>
   );
 }
 
