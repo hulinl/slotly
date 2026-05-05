@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
+import { ProviderBadge } from "@/components/ProviderBadge";
 import { CardSkeleton, ListSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
 import { getSession } from "@/lib/auth";
@@ -273,7 +274,8 @@ function CalendarRow({
 
   return (
     <article className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start gap-4">
+        <ProviderBadge provider={calendar.provider} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h3 className="truncate font-medium text-zinc-900 dark:text-zinc-50">{calendar.name}</h3>

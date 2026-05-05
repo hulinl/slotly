@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { Bell, Building2, CalendarDays, ChevronRight, UserCog, type LucideIcon } from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
@@ -71,32 +72,12 @@ export default function SettingsPage() {
         <WorkingHoursCard me={me} onSaved={setMe} />
 
         <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-1 text-base font-semibold text-zinc-900 dark:text-zinc-50">More</h2>
+          <h2 className="mb-3 text-base font-semibold text-zinc-900 dark:text-zinc-50">More</h2>
           <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            <li>
-              <Link href="/settings/calendars" className="flex items-center justify-between py-3 text-sm hover:underline">
-                <span>Calendar subscriptions</span>
-                <span className="text-zinc-400">→</span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/settings/teams" className="flex items-center justify-between py-3 text-sm hover:underline">
-                <span>Teams &amp; invitations</span>
-                <span className="text-zinc-400">→</span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/settings/notifications" className="flex items-center justify-between py-3 text-sm hover:underline">
-                <span>Notification preferences</span>
-                <span className="text-zinc-400">→</span>
-              </Link>
-            </li>
-            <li>
-              <Link href="/settings/account" className="flex items-center justify-between py-3 text-sm hover:underline">
-                <span>Account &amp; deletion</span>
-                <span className="text-zinc-400">→</span>
-              </Link>
-            </li>
+            <SettingsRow href="/settings/calendars" icon={CalendarDays} label="Calendar subscriptions" hint="Subscribe to ICS URLs you want Slotly to read" />
+            <SettingsRow href="/settings/teams" icon={Building2} label="Teams & invitations" hint="Create teams, invite people, accept invites" />
+            <SettingsRow href="/settings/notifications" icon={Bell} label="Notification preferences" hint="Choose which events email you and ring the bell" />
+            <SettingsRow href="/settings/account" icon={UserCog} label="Account & deletion" hint="Delete your account permanently" destructive />
           </ul>
         </section>
       </main>
@@ -284,5 +265,46 @@ function Card({
       </header>
       {children}
     </section>
+  );
+}
+
+function SettingsRow({
+  href,
+  icon: Icon,
+  label,
+  hint,
+  destructive = false,
+}: {
+  href: string;
+  icon: LucideIcon;
+  label: string;
+  hint?: string;
+  destructive?: boolean;
+}) {
+  return (
+    <li>
+      <Link
+        href={href}
+        className="group flex items-center gap-3 py-3 transition-colors hover:bg-zinc-50/60 dark:hover:bg-zinc-800/40"
+      >
+        <span
+          className={
+            "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg " +
+            (destructive
+              ? "bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-300"
+              : "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300")
+          }
+        >
+          <Icon size={16} aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{label}</p>
+          {hint && (
+            <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{hint}</p>
+          )}
+        </div>
+        <ChevronRight size={16} className="shrink-0 text-zinc-400 transition-transform group-hover:translate-x-0.5" />
+      </Link>
+    </li>
   );
 }
