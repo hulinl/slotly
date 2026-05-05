@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { DatePicker } from "@/components/DatePicker";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
@@ -44,7 +44,17 @@ function defaultSeed(teamId: number): FormSeed {
 }
 
 export default function SearchPage() {
+  return (
+    <Suspense fallback={null}>
+      <SearchPageInner />
+    </Suspense>
+  );
+}
+
+function SearchPageInner() {
   const router = useRouter();
+  const queryParams = useSearchParams();
+  const requestedSavedId = queryParams.get("saved");
   const [email, setEmail] = useState("");
   const [teams, setTeams] = useState<TeamSummary[]>([]);
   const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
@@ -71,11 +81,34 @@ export default function SearchPage() {
       const fetchedTeams = await listTeams();
       setTeams(fetchedTeams);
       if (fetchedTeams.length > 0) {
-        setSeed(defaultSeed(fetchedTeams[0].id));
-        await refreshPresets();
+        const [savedList, recentList] = await Promise.all([
+          listSavedSearches(),
+          listRecentSearches(),
+        ]);
+        setSavedSearches(savedList);
+        setRecentSearches(recentList);
+
+        // If we got here via /search?saved=<id>, prefill from that saved search.
+        const requested =
+          requestedSavedId !== null
+            ? savedList.find((s) => String(s.id) === requestedSavedId)
+            : undefined;
+        if (requested) {
+          setSeed({
+            teamId: requested.team,
+            selectedIds: requested.member_ids,
+            duration: requested.duration_min,
+            buffer: requested.buffer_min,
+            startDate: toLocalDate(new Date()),
+            endDate: toLocalDate(addDays(new Date(), requested.window_days)),
+          });
+        } else {
+          setSeed(defaultSeed(fetchedTeams[0].id));
+        }
       }
       setLoaded(true);
     })().catch(() => router.replace("/auth/login"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   if (!loaded) {
