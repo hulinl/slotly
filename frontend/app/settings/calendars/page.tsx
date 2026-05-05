@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
+import { AlertTriangle, ChevronDown, ExternalLink, HelpCircle } from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { ProviderBadge } from "@/components/ProviderBadge";
 import { CardSkeleton, ListSkeleton, PageSkeleton } from "@/components/Skeleton";
@@ -191,82 +192,172 @@ function AddCalendarForm({ onAdded }: { onAdded: (cal: Calendar) => void }) {
 
 function ProviderHelp() {
   return (
-    <details className="rounded-md border border-zinc-200 bg-zinc-50/50 px-3 py-2 text-zinc-600 open:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/40 dark:text-zinc-300">
-      <summary className="cursor-pointer text-xs font-medium text-zinc-700 hover:underline dark:text-zinc-200">
-        How do I find my ICS URL?
+    <details className="group/help overflow-hidden rounded-lg border border-indigo-200 bg-indigo-50/60 dark:border-indigo-900/60 dark:bg-indigo-950/20">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-indigo-900 transition-colors hover:bg-indigo-100/60 dark:text-indigo-100 dark:hover:bg-indigo-950/40">
+        <HelpCircle size={16} className="shrink-0" aria-hidden="true" />
+        <span className="flex-1">How do I find my ICS URL?</span>
+        <ChevronDown
+          size={16}
+          aria-hidden="true"
+          className="shrink-0 text-indigo-600 transition-transform group-open/help:rotate-180 dark:text-indigo-300"
+        />
       </summary>
-      <div className="mt-3 space-y-3 text-xs leading-relaxed">
-        <div>
-          <p className="font-semibold text-zinc-900 dark:text-zinc-50">Google Calendar</p>
-          <ol className="mt-1 list-decimal space-y-0.5 pl-5">
-            <li>
+      <div className="space-y-3 border-t border-indigo-200/70 bg-white/80 p-4 dark:border-indigo-900/60 dark:bg-zinc-900/60">
+        <ProviderHelpCard
+          provider="google"
+          name="Google Calendar"
+          steps={[
+            <>
               Open{" "}
-              <a className="underline" href="https://calendar.google.com/calendar/u/0/r/settings" target="_blank" rel="noreferrer">
+              <ExtLink href="https://calendar.google.com/calendar/u/0/r/settings">
                 Google Calendar settings
-              </a>{" "}
+              </ExtLink>{" "}
               and pick the calendar you want to share.
-            </li>
-            <li>
-              Scroll to <em>Integrate calendar</em> → <em>Secret address in iCal format</em>.
-            </li>
-            <li>Copy that URL and paste it above.</li>
-          </ol>
-        </div>
-        <div>
-          <p className="font-semibold text-zinc-900 dark:text-zinc-50">Microsoft 365 / Outlook</p>
-          <ol className="mt-1 list-decimal space-y-0.5 pl-5">
-            <li>
+            </>,
+            <>
+              Scroll to <em>Integrate calendar</em> →{" "}
+              <em>Secret address in iCal format</em>.
+            </>,
+            "Copy that URL and paste it above.",
+          ]}
+        />
+
+        <ProviderHelpCard
+          provider="outlook"
+          name="Microsoft 365 / Outlook"
+          steps={[
+            <>
               Open{" "}
-              <a className="underline" href="https://outlook.office.com/calendar/options/calendar/SharedCalendars" target="_blank" rel="noreferrer">
+              <ExtLink href="https://outlook.office.com/calendar/options/calendar/SharedCalendars">
                 Outlook web → Settings → Shared calendars
-              </a>
+              </ExtLink>
               .
-            </li>
-            <li>
+            </>,
+            <>
               Under <em>Publish a calendar</em>, pick the calendar (usually
-              &quot;Calendar&quot;) and choose <em>Can view all details</em>. Click <em>Publish</em>.
-            </li>
-            <li>
+              &quot;Calendar&quot;) and choose <em>Can view all details</em>.
+              Click <em>Publish</em>.
+            </>,
+            <>
               Two links appear — copy the one that ends in{" "}
-              <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-700">.ics</code> and paste it above.
-            </li>
-          </ol>
-          <p className="mt-1.5 rounded bg-amber-50 px-2 py-1 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-            ⚠ Many corporate Microsoft 365 tenants disable calendar publishing
-            by IT policy. If <em>Publish a calendar</em> is missing or greyed out,
-            ask your admin or use a personal Outlook.com account for now —
-            we&apos;ll add OAuth login (which doesn&apos;t need publishing) in a
-            later release.
-          </p>
-        </div>
-        <div>
-          <p className="font-semibold text-zinc-900 dark:text-zinc-50">Apple iCloud</p>
-          <ol className="mt-1 list-decimal space-y-0.5 pl-5">
-            <li>
+              <Code>.ics</Code> and paste it above.
+            </>,
+          ]}
+        >
+          <Alert>
+            <strong>Heads up:</strong> many corporate Microsoft 365 tenants
+            disable calendar publishing by IT policy. If{" "}
+            <em>Publish a calendar</em> is missing or greyed out, ask your
+            admin or use a personal Outlook.com account — we&apos;ll add OAuth
+            login (which doesn&apos;t need publishing) in a later release.
+          </Alert>
+        </ProviderHelpCard>
+
+        <ProviderHelpCard
+          provider="apple"
+          name="Apple iCloud"
+          steps={[
+            <>
               Sign in to{" "}
-              <a className="underline" href="https://www.icloud.com/calendar" target="_blank" rel="noreferrer">
-                icloud.com/calendar
-              </a>
-              .
-            </li>
-            <li>
-              Hover the calendar in the left sidebar → click the share icon → toggle <em>Public Calendar</em>.
-            </li>
-            <li>
+              <ExtLink href="https://www.icloud.com/calendar">icloud.com/calendar</ExtLink>.
+            </>,
+            <>
+              Hover the calendar in the left sidebar → click the share icon →
+              toggle <em>Public Calendar</em>.
+            </>,
+            <>
               Click <em>Copy Link</em>. If the URL starts with{" "}
-              <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-700">webcal://</code> we&apos;ll convert it automatically.
-            </li>
-          </ol>
-        </div>
-        <div>
-          <p className="font-semibold text-zinc-900 dark:text-zinc-50">Other / generic ICS</p>
-          <p className="mt-1">
-            Any HTTPS URL ending in{" "}
-            <code className="rounded bg-zinc-200 px-1 dark:bg-zinc-700">.ics</code> that returns valid iCalendar (RFC 5545) data works. Slotly polls it every 5 minutes.
-          </p>
-        </div>
+              <Code>webcal://</Code> we&apos;ll convert it automatically.
+            </>,
+          ]}
+        />
+
+        <ProviderHelpCard
+          provider="other"
+          name="Other / generic ICS"
+          intro={
+            <>
+              Any HTTPS URL ending in <Code>.ics</Code> that returns valid
+              iCalendar (RFC 5545) data works. Slotly polls it every 5 minutes.
+            </>
+          }
+        />
       </div>
     </details>
+  );
+}
+
+function ProviderHelpCard({
+  provider,
+  name,
+  steps,
+  intro,
+  children,
+}: {
+  provider: "google" | "outlook" | "apple" | "other";
+  name: string;
+  steps?: React.ReactNode[];
+  intro?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-md border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <header className="mb-2 flex items-center gap-2">
+        <ProviderBadge provider={provider} size={28} />
+        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">{name}</h3>
+      </header>
+      {intro && (
+        <p className="text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">{intro}</p>
+      )}
+      {steps && (
+        <ol className="space-y-2 text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
+          {steps.map((step, i) => (
+            <li key={i} className="flex items-start gap-2.5">
+              <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[11px] font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                {i + 1}
+              </span>
+              <span className="flex-1">{step}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {children}
+    </section>
+  );
+}
+
+function ExtLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-0.5 font-medium text-indigo-700 underline decoration-indigo-300 underline-offset-2 hover:decoration-indigo-500 dark:text-indigo-300 dark:decoration-indigo-700"
+    >
+      {children}
+      <ExternalLink size={12} className="shrink-0" aria-hidden="true" />
+    </a>
+  );
+}
+
+function Code({ children }: { children: React.ReactNode }) {
+  return (
+    <code className="rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 font-mono text-[0.85em] text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+      {children}
+    </code>
+  );
+}
+
+function Alert({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm leading-relaxed text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+      <AlertTriangle
+        size={16}
+        className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400"
+        aria-hidden="true"
+      />
+      <p>{children}</p>
+    </div>
   );
 }
 
