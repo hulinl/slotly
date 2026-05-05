@@ -13,6 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
+from apps.availability.models import Unavailability
 from apps.calendars.models import CalendarEvent
 from apps.teams.models import Membership, Team
 from apps.teams.permissions import is_member
@@ -79,6 +80,14 @@ class SearchView(APIView):
         busy_per_user: dict[int, list[tuple]] = {uid: [] for uid in team_member_ids}
         for ev in events:
             busy_per_user[ev["calendar__owner_id"]].append((ev["dtstart"], ev["dtend"]))
+
+        # Manual unavailability blocks (PRD M12) — same opaque-busy semantics.
+        for u in Unavailability.objects.filter(
+            user_id__in=team_member_ids,
+            starts_at__lt=data["window_end"],
+            ends_at__gt=data["window_start"],
+        ).values("user_id", "starts_at", "ends_at"):
+            busy_per_user[u["user_id"]].append((u["starts_at"], u["ends_at"]))
 
         slots, truncated = compute_slots(
             working_hours_per_user=working_hours_per_user,

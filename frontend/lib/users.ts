@@ -1,4 +1,4 @@
-/** Client for /api/users/<id>. */
+/** Client for /api/users (index) and /api/users/<id> (detail). */
 
 import type { WorkingHours } from "./me";
 
@@ -11,6 +11,20 @@ export type Teammate = {
   working_hours: WorkingHours;
   shared_team_ids: number[];
 };
+
+export type TeammateSummary = {
+  id: number;
+  email: string;
+  first_name: string;
+  last_name: string;
+  shared_team_names: string[];
+};
+
+export async function listTeammates(): Promise<TeammateSummary[]> {
+  const res = await fetch("/api/users", { credentials: "include" });
+  if (!res.ok) throw new UsersApiError(res.status, `HTTP ${res.status}`);
+  return res.json();
+}
 
 export class UsersApiError extends Error {
   status: number;

@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.teams",
     "apps.calendars",
+    "apps.availability",
     "apps.search",
     "apps.notifications",
 ]

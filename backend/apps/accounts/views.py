@@ -119,6 +119,47 @@ def _sole_admin_team_ids(user) -> list[int]:
     )
 
 
+class TeammatesIndexView(APIView):
+    """
+    GET /api/users — list of users the caller can see (anyone in any
+    team they're a member of). Used by the People index page.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        my_teams = Team.objects.filter(memberships__user=request.user).values_list("pk", flat=True)
+        rows = (
+            Membership.objects.filter(team_id__in=my_teams)
+            .exclude(user=request.user)
+            .select_related("user", "team")
+            .values("user__id", "user__email", "user__first_name", "user__last_name", "team__name")
+        )
+        # Group rows per user with team list.
+        bucket: dict[int, dict] = {}
+        for r in rows:
+            uid = r["user__id"]
+            entry = bucket.setdefault(
+                uid,
+                {
+                    "id": uid,
+                    "email": r["user__email"],
+                    "first_name": r["user__first_name"],
+                    "last_name": r["user__last_name"],
+                    "shared_team_names": [],
+                },
+            )
+            entry["shared_team_names"].append(r["team__name"])
+        # Stable sort: name first, email fallback.
+        out = sorted(
+            bucket.values(),
+            key=lambda x: (
+                (x["first_name"] + " " + x["last_name"]).strip().lower() or x["email"].lower(),
+            ),
+        )
+        return Response(out)
+
+
 class TeammateView(APIView):
     """
     GET /api/users/<id> — public profile of a teammate.
