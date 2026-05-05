@@ -5,18 +5,58 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
-import { Button, FormError, Input, Label } from "@/components/ui";
+import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import { searchSlots, SearchApiError, type Slot } from "@/lib/search";
+import {
+  createSavedSearch,
+  deleteSavedSearch,
+  listRecentSearches,
+  listSavedSearches,
+  SavedSearchApiError,
+  type RecentSearch,
+  type SavedSearch,
+} from "@/lib/saved-searches";
 import { getTeam, listTeams, type TeamDetail, type TeamSummary } from "@/lib/teams";
 
 const DURATION_PRESETS = [15, 30, 45, 60, 90, 120, 240, 480];
+
+type FormSeed = {
+  teamId: number;
+  selectedIds: number[] | null; // null = "default to whole team"
+  duration: number;
+  buffer: number;
+  startLocal: string; // datetime-local
+  endLocal: string;
+};
+
+function defaultSeed(teamId: number): FormSeed {
+  return {
+    teamId,
+    selectedIds: null,
+    duration: 60,
+    buffer: 0,
+    startLocal: toLocalIso(new Date()),
+    endLocal: toLocalIso(addDays(new Date(), 90)),
+  };
+}
 
 export default function SearchPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [teams, setTeams] = useState<TeamSummary[]>([]);
+  const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
+  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   const [loaded, setLoaded] = useState(false);
+
+  const [seed, setSeed] = useState<FormSeed | null>(null);
+  const [seedKey, setSeedKey] = useState(0);
+
+  async function refreshPresets() {
+    const [s, r] = await Promise.all([listSavedSearches(), listRecentSearches()]);
+    setSavedSearches(s);
+    setRecentSearches(r);
+  }
 
   useEffect(() => {
     (async () => {
@@ -26,7 +66,12 @@ export default function SearchPage() {
         return;
       }
       setEmail(session.data.user.email);
-      setTeams(await listTeams());
+      const fetchedTeams = await listTeams();
+      setTeams(fetchedTeams);
+      if (fetchedTeams.length > 0) {
+        setSeed(defaultSeed(fetchedTeams[0].id));
+        await refreshPresets();
+      }
       setLoaded(true);
     })().catch(() => router.replace("/auth/login"));
   }, [router]);
@@ -39,11 +84,38 @@ export default function SearchPage() {
     );
   }
 
+  function applySeed(next: FormSeed) {
+    setSeed(next);
+    setSeedKey((k) => k + 1);
+  }
+
+  function loadSaved(s: SavedSearch) {
+    applySeed({
+      teamId: s.team,
+      selectedIds: s.member_ids,
+      duration: s.duration_min,
+      buffer: s.buffer_min,
+      startLocal: toLocalIso(new Date()),
+      endLocal: toLocalIso(addDays(new Date(), s.window_days)),
+    });
+  }
+
+  function loadRecent(r: RecentSearch) {
+    applySeed({
+      teamId: r.team,
+      selectedIds: r.member_ids,
+      duration: r.duration_min,
+      buffer: r.buffer_min,
+      startLocal: toLocalIso(new Date(r.window_start)),
+      endLocal: toLocalIso(new Date(r.window_end)),
+    });
+  }
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <AuthedHeader email={email} />
 
-      <main className="mx-auto max-w-3xl space-y-8 px-6 py-10">
+      <main className="mx-auto max-w-3xl space-y-6 px-6 py-10">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Find a time to meet
@@ -52,10 +124,31 @@ export default function SearchPage() {
             Pick a team and the people you need; Slotly returns every shared free slot in your search window.
           </p>
         </div>
+
         {teams.length === 0 ? (
           <EmptyTeamsCard />
         ) : (
-          <SearchForm teams={teams} />
+          <>
+            {(savedSearches.length > 0 || recentSearches.length > 0) && (
+              <PresetsPanel
+                teams={teams}
+                saved={savedSearches}
+                recent={recentSearches}
+                onLoadSaved={loadSaved}
+                onLoadRecent={loadRecent}
+                onChanged={refreshPresets}
+              />
+            )}
+            {seed && (
+              <SearchForm
+                key={seedKey}
+                teams={teams}
+                initialSeed={seed}
+                onSearched={refreshPresets}
+                savedSearches={savedSearches}
+              />
+            )}
+          </>
         )}
       </main>
     </div>
@@ -75,32 +168,140 @@ function EmptyTeamsCard() {
 }
 
 // ---------------------------------------------------------------------------
+// Presets (saved + recent)
+// ---------------------------------------------------------------------------
 
-function SearchForm({ teams }: { teams: TeamSummary[] }) {
-  const [teamId, setTeamId] = useState<number>(teams[0].id);
+function PresetsPanel({
+  teams,
+  saved,
+  recent,
+  onLoadSaved,
+  onLoadRecent,
+  onChanged,
+}: {
+  teams: TeamSummary[];
+  saved: SavedSearch[];
+  recent: RecentSearch[];
+  onLoadSaved: (s: SavedSearch) => void;
+  onLoadRecent: (r: RecentSearch) => void;
+  onChanged: () => void;
+}) {
+  const teamName = (id: number) => teams.find((t) => t.id === id)?.name ?? `Team #${id}`;
+
+  async function onDeleteSaved(s: SavedSearch) {
+    if (!confirm(`Delete saved search "${s.name}"?`)) return;
+    await deleteSavedSearch(s.id);
+    await onChanged();
+  }
+
+  return (
+    <section className="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      {saved.length > 0 && (
+        <div>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Saved searches
+          </h2>
+          <ul className="flex flex-wrap gap-2">
+            {saved.map((s) => (
+              <li key={s.id} className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200 bg-zinc-50 px-3 py-1 text-xs dark:border-zinc-700 dark:bg-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => onLoadSaved(s)}
+                  className="font-medium text-zinc-800 hover:underline dark:text-zinc-100"
+                  title={`${teamName(s.team)} • ${s.member_ids.length} members • ${s.duration_min}min • next ${s.window_days}d`}
+                >
+                  {s.name}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDeleteSaved(s)}
+                  aria-label={`Delete saved search ${s.name}`}
+                  className="text-zinc-400 hover:text-red-600"
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {recent.length > 0 && (
+        <div>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Recent
+          </h2>
+          <ul className="space-y-1">
+            {recent.slice(0, 5).map((r) => (
+              <li key={r.id} className="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => onLoadRecent(r)}
+                  className="flex-1 truncate text-left text-zinc-700 hover:underline dark:text-zinc-300"
+                >
+                  <strong>{teamName(r.team)}</strong> • {r.member_ids.length} member{r.member_ids.length === 1 ? "" : "s"} •{" "}
+                  {r.duration_min}min • {new Date(r.window_start).toLocaleDateString()}–
+                  {new Date(r.window_end).toLocaleDateString()}
+                </button>
+                <span className="shrink-0 text-zinc-400">{relativeTime(r.created_at)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Search form
+// ---------------------------------------------------------------------------
+
+function SearchForm({
+  teams,
+  initialSeed,
+  onSearched,
+  savedSearches,
+}: {
+  teams: TeamSummary[];
+  initialSeed: FormSeed;
+  onSearched: () => void;
+  savedSearches: SavedSearch[];
+}) {
+  const [teamId, setTeamId] = useState<number>(initialSeed.teamId);
   const [team, setTeam] = useState<TeamDetail | null>(null);
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [duration, setDuration] = useState(60);
-  const [buffer, setBuffer] = useState(0);
-  const [start, setStart] = useState<string>(() => toLocalIso(new Date()));
-  const [end, setEnd] = useState<string>(() => toLocalIso(addDays(new Date(), 90)));
+  const [selected, setSelected] = useState<Set<number>>(
+    new Set(initialSeed.selectedIds ?? []),
+  );
+  const [duration, setDuration] = useState(initialSeed.duration);
+  const [buffer, setBuffer] = useState(initialSeed.buffer);
+  const [start, setStart] = useState<string>(initialSeed.startLocal);
+  const [end, setEnd] = useState<string>(initialSeed.endLocal);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ slots: Slot[]; truncated: boolean } | null>(null);
 
-  // Load team detail (member roster) whenever the team changes.
+  // Load team detail (member roster) whenever the team changes. If no
+  // explicit selection seed was provided (e.g. user just opened the page),
+  // default to "everyone in the team".
   useEffect(() => {
     setTeam(null);
-    setSelected(new Set());
+    let cancelled = false;
     getTeam(teamId).then((t) => {
+      if (cancelled) return;
       setTeam(t);
-      // Default selection = everyone in the team.
-      setSelected(new Set(t.members.map((m) => m.user_id)));
+      if (initialSeed.selectedIds === null && teamId === initialSeed.teamId) {
+        setSelected(new Set(t.members.map((m) => m.user_id)));
+      }
     });
+    return () => {
+      cancelled = true;
+    };
+    // initialSeed is stable for this form instance (key remounts on preset load).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId]);
 
   const memberCount = team?.members.length ?? 0;
-  const allSelected = team !== null && selected.size === memberCount;
+  const allSelected = team !== null && selected.size === memberCount && memberCount > 0;
 
   function toggleMember(userId: number) {
     setSelected((prev) => {
@@ -130,6 +331,7 @@ function SearchForm({ teams }: { teams: TeamSummary[] }) {
         window_end: new Date(end).toISOString(),
       });
       setResult({ slots: r.slots, truncated: r.truncated });
+      onSearched();
     } catch (err) {
       setError(err instanceof SearchApiError ? err.message : "Search failed");
     } finally {
@@ -161,7 +363,9 @@ function SearchForm({ teams }: { teams: TeamSummary[] }) {
 
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <Label>Members ({selected.size}/{memberCount})</Label>
+            <Label>
+              Members ({selected.size}/{memberCount})
+            </Label>
             {team && (
               <button
                 type="button"
@@ -188,7 +392,9 @@ function SearchForm({ teams }: { teams: TeamSummary[] }) {
                     className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900"
                   />
                   <label htmlFor={`m-${m.user_id}`} className="flex-1 cursor-pointer text-sm">
-                    {(m.first_name || m.last_name) ? `${m.first_name} ${m.last_name}`.trim() : m.email}
+                    {m.first_name || m.last_name
+                      ? `${m.first_name} ${m.last_name}`.trim()
+                      : m.email}
                   </label>
                   <span className="rounded-full border border-zinc-200 px-2 py-0.5 text-xs text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
                     {m.role}
@@ -246,8 +452,144 @@ function SearchForm({ teams }: { teams: TeamSummary[] }) {
         </Button>
       </form>
 
-      {result && <Results slots={result.slots} truncated={result.truncated} />}
+      {result && (
+        <>
+          <Results slots={result.slots} truncated={result.truncated} />
+          <SaveCurrentSearch
+            teamId={teamId}
+            memberIds={Array.from(selected)}
+            duration={duration}
+            buffer={buffer}
+            startLocal={start}
+            endLocal={end}
+            existingNames={new Set(savedSearches.map((s) => s.name))}
+            onSaved={onSearched}
+          />
+        </>
+      )}
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Save-this-search inline panel
+// ---------------------------------------------------------------------------
+
+function SaveCurrentSearch({
+  teamId,
+  memberIds,
+  duration,
+  buffer,
+  startLocal,
+  endLocal,
+  existingNames,
+  onSaved,
+}: {
+  teamId: number;
+  memberIds: number[];
+  duration: number;
+  buffer: number;
+  startLocal: string;
+  endLocal: string;
+  existingNames: Set<string>;
+  onSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  // Days from now to `endLocal` — we save the saved-search as a relative window.
+  const windowDays = Math.max(1, Math.round((new Date(endLocal).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setSuccess(null);
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError("Give it a name.");
+      return;
+    }
+    if (existingNames.has(trimmed)) {
+      setError("You already have a saved search with this name.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await createSavedSearch({
+        name: trimmed,
+        team: teamId,
+        member_ids: memberIds,
+        duration_min: duration,
+        buffer_min: buffer,
+        window_days: windowDays,
+      });
+      setSuccess(`Saved as “${trimmed}”.`);
+      setName("");
+      setOpen(false);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof SavedSearchApiError ? err.message : "Save failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  void startLocal; // displayed only via the relative windowDays
+
+  if (!open) {
+    return (
+      <div className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white px-5 py-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Like this search? Save it and re-run it in one click.
+        </p>
+        <FormSuccess message={success} />
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="rounded-md border border-zinc-200 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+        >
+          Save this search
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={onSubmit}
+      className="space-y-3 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      <Label htmlFor="save-name">Save as</Label>
+      <Input
+        id="save-name"
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="e.g. Devs weekly"
+      />
+      <FormError message={error} />
+      <p className="text-xs text-zinc-500">
+        Will be saved with a relative window of <strong>{windowDays} day{windowDays === 1 ? "" : "s"}</strong> from when you load it.
+      </p>
+      <div className="flex gap-2">
+        <Button type="submit" disabled={submitting} className="sm:w-auto sm:px-4">
+          {submitting ? "Saving…" : "Save"}
+        </Button>
+        <button
+          type="button"
+          onClick={() => {
+            setOpen(false);
+            setError(null);
+          }}
+          className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -309,7 +651,6 @@ function Results({ slots, truncated }: { slots: Slot[]; truncated: boolean }) {
 // ---------------------------------------------------------------------------
 
 function toLocalIso(d: Date): string {
-  // <input type="datetime-local"> wants `YYYY-MM-DDTHH:MM` in local time.
   const pad = (n: number) => String(n).padStart(2, "0");
   return (
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
@@ -348,4 +689,12 @@ function copyToClipboard(text: string) {
   navigator.clipboard?.writeText(text).catch(() => {
     /* ignore */
   });
+}
+
+function relativeTime(iso: string): string {
+  const sec = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (sec < 60) return "just now";
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  return `${Math.floor(sec / 86400)}d ago`;
 }
