@@ -450,7 +450,7 @@ function SearchForm({
                     id={`m-${m.user_id}`}
                     checked={selected.has(m.user_id)}
                     onChange={() => toggleMember(m.user_id)}
-                    className="h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-900 dark:border-zinc-700 dark:bg-zinc-900"
+                    className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-900"
                   />
                   <label htmlFor={`m-${m.user_id}`} className="flex-1 cursor-pointer text-sm">
                     {m.first_name || m.last_name
@@ -460,6 +460,13 @@ function SearchForm({
                   <span className="rounded-full border border-zinc-200 px-2 py-0.5 text-xs text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
                     {m.role}
                   </span>
+                  <Link
+                    href={`/people/${m.user_id}`}
+                    title="View profile"
+                    className="text-xs text-zinc-500 underline hover:text-indigo-700 dark:text-zinc-400 dark:hover:text-indigo-300"
+                  >
+                    View
+                  </Link>
                 </li>
               ))}
             </ul>

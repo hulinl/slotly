@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
+import { BackButton } from "@/components/BackButton";
 import { DatePicker } from "@/components/DatePicker";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { SlotsCalendar } from "@/components/SlotsCalendar";
@@ -157,16 +158,13 @@ export default function TeammateProfilePage() {
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <AuthedHeader email={meEmail} />
       <main className="mx-auto max-w-3xl space-y-6 px-6 py-10">
-        <Link
-          href={
+        <BackButton
+          fallback={
             user.shared_team_ids[0]
               ? `/settings/teams/${user.shared_team_ids[0]}`
-              : "/settings/teams"
+              : "/people"
           }
-          className="text-xs text-zinc-500 hover:underline dark:text-zinc-400"
-        >
-          ← Back to team
-        </Link>
+        />
 
         {/* identity card */}
         <section className="flex items-center gap-4 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">

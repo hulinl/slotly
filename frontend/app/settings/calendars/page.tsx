@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { AlertTriangle, ChevronDown, ExternalLink, HelpCircle } from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
+import { BackButton } from "@/components/BackButton";
 import { ProviderBadge } from "@/components/ProviderBadge";
 import { CardSkeleton, ListSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
@@ -77,11 +78,9 @@ export default function CalendarsPage() {
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <AuthedHeader email={email} />
 
-      <main className="mx-auto max-w-2xl space-y-8 px-6 py-10">
+      <main className="mx-auto max-w-2xl space-y-6 px-6 py-10">
+        <BackButton fallback="/settings" />
         <div className="space-y-1">
-          <p className="text-xs uppercase tracking-wide text-zinc-500">
-            <Link href="/settings" className="underline">Settings</Link> / Calendars
-          </p>
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Calendar subscriptions
           </h1>

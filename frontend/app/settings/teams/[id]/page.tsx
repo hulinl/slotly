@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
+import { BackButton } from "@/components/BackButton";
 import { CardSkeleton, ListSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
 import { getSession } from "@/lib/auth";
@@ -95,10 +96,8 @@ export default function TeamDetailPage() {
 
   return (
     <Shell email={me.email ?? ""} onLogout={() => router.replace("/")}>
+      <BackButton fallback="/settings/teams" />
       <div className="space-y-1">
-        <p className="text-xs uppercase tracking-wide text-zinc-500">
-          <Link href="/settings/teams" className="underline">Teams</Link> / {team.name}
-        </p>
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{team.name}</h1>
         {team.description && <p className="text-sm text-zinc-600 dark:text-zinc-400">{team.description}</p>}
       </div>
