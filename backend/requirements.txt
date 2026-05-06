@@ -28,6 +28,7 @@ holidays==0.62                 # public-holiday data per country
 
 # --- Production server ---
 gunicorn==23.0.0
+azure-communication-email==1.0.0  # ACS Email SDK
 
 # --- Dev / tooling ---
 ruff==0.8.4

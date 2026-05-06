@@ -43,12 +43,12 @@ SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"
 
 # --- CORS / CSRF for prod frontend on slotly.team ---
-FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="https://slotly.team")
-CORS_ALLOWED_ORIGINS = env(
+FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="https://www.slotly.team")
+CORS_ALLOWED_ORIGINS = env.list(
     "CORS_ALLOWED_ORIGINS",
     default=[FRONTEND_BASE_URL],
 )
-CSRF_TRUSTED_ORIGINS = env(
+CSRF_TRUSTED_ORIGINS = env.list(
     "CSRF_TRUSTED_ORIGINS",
     default=[FRONTEND_BASE_URL],
 )
@@ -70,13 +70,17 @@ HEADLESS_FRONTEND_URLS = {
     "account_signup": f"{FRONTEND_BASE_URL}/auth/register",
 }
 
-# --- Email: Azure Communication Services via SMTP ---
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = env("EMAIL_HOST", default="smtp.azurecomm.net")
-EMAIL_PORT = env.int("EMAIL_PORT", default=587)
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
-EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+# --- Email: Azure Communication Services (REST SDK, not SMTP) ---
+# ACS doesn't expose SMTP — its native API is REST + connection string.
+# Custom backend lives at apps.notifications.acs_email_backend.
+EMAIL_BACKEND = env(
+    "EMAIL_BACKEND",
+    default="apps.notifications.acs_email_backend.AzureCommunicationEmailBackend",
+)
+AZURE_COMMUNICATION_CONNECTION_STRING = env(
+    "AZURE_COMMUNICATION_CONNECTION_STRING",
+    default="",
+)
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="no-reply@slotly.team")
 
 # --- Logging: send to stdout for Container Apps log streaming ---
