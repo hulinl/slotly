@@ -157,6 +157,19 @@ resource emailDomain 'Microsoft.Communication/EmailServices/Domains@2023-04-01' 
   }
 }
 
+// Customer-managed sender domain. Created in pending-verification state;
+// after the user adds the DNS records that Azure exposes via this resource's
+// `verificationRecords` property, run InitiateVerification to flip it Verified.
+resource emailCustomDomain 'Microsoft.Communication/EmailServices/Domains@2023-04-01' = {
+  parent: emailService
+  name: 'slotly.team'
+  location: 'global'
+  properties: {
+    domainManagement: 'CustomerManaged'
+    userEngagementTracking: 'Disabled'
+  }
+}
+
 // ===========================================================================
 // Container Apps environment + backend app
 // ===========================================================================
