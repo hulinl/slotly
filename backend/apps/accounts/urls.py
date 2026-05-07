@@ -4,6 +4,7 @@ from .holidays_view import HolidaysView
 from .views import (
     DeleteMeView,
     MeView,
+    MyAvailabilityView,
     PublicProfileView,
     RegenerateShareTokenView,
     TeammateView,
@@ -15,6 +16,7 @@ urlpatterns = [
     # ↔ Django APPEND_SLASH (add slash) redirect loop when proxied through
     # the frontend dev server.
     path("me", MeView.as_view(), name="me"),
+    path("me/availability", MyAvailabilityView.as_view(), name="me-availability"),
     path("me/share/regenerate", RegenerateShareTokenView.as_view(), name="me-share-regenerate"),
     path("me/delete", DeleteMeView.as_view(), name="me-delete"),
     path("users", TeammatesIndexView.as_view(), name="teammate-index"),
