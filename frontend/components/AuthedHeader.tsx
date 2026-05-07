@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Building2, Calendar, LogOut, Settings, Users, type LucideIcon } from "lucide-react";
+import { Building2, Calendar, LogOut, Settings, User, Users, type LucideIcon } from "lucide-react";
 import { logout } from "@/lib/auth";
 import { Logo } from "./Logo";
 import { NotificationsBell } from "./NotificationsBell";
@@ -13,6 +13,12 @@ const NAV: Array<{ href: string; label: string; icon: LucideIcon; matches: (path
     label: "Find a slot",
     icon: Calendar,
     matches: (p) => p === "/search",
+  },
+  {
+    href: "/profile",
+    label: "Profile",
+    icon: User,
+    matches: (p) => p === "/profile",
   },
   {
     href: "/people",
