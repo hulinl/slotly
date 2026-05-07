@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 from django.db import models
 
@@ -63,6 +65,13 @@ class User(AbstractUser):
     # apps.notifications.signals. Empty dict for legacy users; the dispatcher
     # treats a missing event key as "all on", matching the default.
     notification_prefs = models.JSONField(default=dict, blank=True)
+
+    # Public profile sharing (M17). When share_enabled is True, anyone with
+    # /u/<share_token> can view a read-only busy/free + name + avatar page.
+    # Regenerating the token (apps.accounts.views.RegenerateShareTokenView)
+    # invalidates the previous URL immediately.
+    share_enabled = models.BooleanField(default=False)
+    share_token = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True)
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS: list[str] = []

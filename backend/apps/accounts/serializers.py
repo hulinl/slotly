@@ -56,11 +56,29 @@ SUPPORTED_COUNTRIES = (
 
 class MeSerializer(serializers.ModelSerializer):
     working_hours = WorkingHoursField()
+    avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ("email", "first_name", "last_name", "phone", "working_hours", "country")
-        read_only_fields = ("email",)
+        fields = (
+            "email",
+            "first_name",
+            "last_name",
+            "phone",
+            "working_hours",
+            "country",
+            "share_enabled",
+            "share_token",
+            "avatar_url",
+        )
+        read_only_fields = ("email", "share_token", "avatar_url")
+
+    def get_avatar_url(self, obj: User) -> str | None:
+        if not obj.avatar:
+            return None
+        request = self.context.get("request")
+        url = obj.avatar.url
+        return request.build_absolute_uri(url) if request else url
 
     def validate_country(self, value: str) -> str:
         v = (value or "").strip().upper()
@@ -69,6 +87,29 @@ class MeSerializer(serializers.ModelSerializer):
                 f"Unsupported country code. Pick one of: {', '.join(SUPPORTED_COUNTRIES)}",
             )
         return v
+
+
+class PublicProfileSerializer(serializers.ModelSerializer):
+    """Read-only payload for /api/public/profile/<token>. Strips PII."""
+
+    display_name = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ("display_name", "avatar_url", "country", "working_hours")
+        read_only_fields = fields
+
+    def get_display_name(self, obj: User) -> str:
+        full = f"{obj.first_name} {obj.last_name}".strip()
+        return full or obj.email.split("@")[0]
+
+    def get_avatar_url(self, obj: User) -> str | None:
+        if not obj.avatar:
+            return None
+        request = self.context.get("request")
+        url = obj.avatar.url
+        return request.build_absolute_uri(url) if request else url
 
 
 class TeammateSerializer(serializers.ModelSerializer):

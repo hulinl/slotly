@@ -26,10 +26,13 @@ export type Me = {
   phone: string;
   working_hours: WorkingHours;
   country: string;
+  share_enabled: boolean;
+  share_token: string;
+  avatar_url: string | null;
 };
 
 export type MePatch = Partial<
-  Pick<Me, "first_name" | "last_name" | "phone" | "working_hours" | "country">
+  Pick<Me, "first_name" | "last_name" | "phone" | "working_hours" | "country" | "share_enabled">
 >;
 
 export const SUPPORTED_COUNTRIES: Array<{ code: string; name: string }> = [
@@ -115,4 +118,29 @@ export async function deleteMe(password: string): Promise<void> {
     body: JSON.stringify({ password }),
   });
   if (!res.ok) throw new MeApiError(res.status, await res.json().catch(() => ({})));
+}
+
+export async function regenerateShareToken(): Promise<Me> {
+  const res = await fetch("/api/me/share/regenerate", {
+    method: "POST",
+    credentials: "include",
+    headers: csrfHeader(),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new MeApiError(res.status, body);
+  return body as Me;
+}
+
+export async function uploadAvatar(file: File): Promise<Me> {
+  const fd = new FormData();
+  fd.append("avatar", file);
+  const res = await fetch("/api/me", {
+    method: "PATCH",
+    credentials: "include",
+    headers: csrfHeader(),  // no Content-Type — browser sets multipart boundary
+    body: fd,
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new MeApiError(res.status, body);
+  return body as Me;
 }

@@ -31,11 +31,11 @@ param djangoSecretKey string
 @description('Calendar URL encryption key (32-byte url-safe base64 — see PRD §5.2).')
 param calendarUrlEncryptionKey string
 
-@description('Public origin where the frontend is served (canonical, used for email links + CORS).')
-param frontendBaseUrl string = 'https://www.slotly.team'
+@description('Public origin where the frontend is served (canonical, used for email links + CORS). Apex is the default — Azure DNS ALIAS at @ points to the SWA, so https://slotly.team works directly.')
+param frontendBaseUrl string = 'https://slotly.team'
 
-@description('Comma-separated list of allowed CORS origins / CSRF trusted origins. Defaults to apex + www so a webglobe URL redirect from apex still passes CSRF.')
-param frontendAllowedOrigins string = 'https://www.slotly.team,https://slotly.team'
+@description('Comma-separated list of allowed CORS origins / CSRF trusted origins. Includes apex + www.')
+param frontendAllowedOrigins string = 'https://slotly.team,https://www.slotly.team'
 
 @description('GitHub repo URL for Static Web Apps source.')
 param githubRepo string = 'https://github.com/hulinl/slotly'
@@ -57,6 +57,7 @@ var suffix = take(uniqueString(resourceGroup().id), 6)
 
 var pgServerName = 'slotly-pg-${suffix}'
 var acrName = 'slotlyacr${suffix}'
+var storageName = 'slotlymedia${suffix}'
 var caEnvName = 'slotly-env'
 var caBackendName = 'slotly-backend'
 var swaName = 'slotly-frontend'
@@ -125,6 +126,43 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
   }
   properties: {
     adminUserEnabled: true
+  }
+}
+
+// ===========================================================================
+// Azure Blob Storage — user-uploaded media (profile photos). Public read on
+// the `media` container so frontends can render <img src=...> directly
+// without signed URLs.
+// ===========================================================================
+resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  name: storageName
+  location: location
+  sku: {
+    name: 'Standard_LRS'
+  }
+  kind: 'StorageV2'
+  properties: {
+    accessTier: 'Hot'
+    allowBlobPublicAccess: true
+    minimumTlsVersion: 'TLS1_2'
+    supportsHttpsTrafficOnly: true
+    networkAcls: {
+      defaultAction: 'Allow'
+    }
+  }
+}
+
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  parent: storage
+  name: 'default'
+  properties: {}
+}
+
+resource mediaContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  parent: blobService
+  name: 'media'
+  properties: {
+    publicAccess: 'Blob'  // Anonymous reads of individual blobs (avatars).
   }
 }
 
@@ -240,6 +278,10 @@ resource caBackend 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'acs-conn'
           value: comm.listKeys().primaryConnectionString
         }
+        {
+          name: 'storage-conn'
+          value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=core.windows.net'
+        }
       ]
     }
     template: {
@@ -264,6 +306,9 @@ resource caBackend 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'DATABASE_URL', secretRef: 'pg-url' }
             { name: 'CALENDAR_URL_ENCRYPTION_KEY', secretRef: 'cal-key' }
             { name: 'AZURE_COMMUNICATION_CONNECTION_STRING', secretRef: 'acs-conn' }
+            { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-conn' }
+            { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storage.name }
+            { name: 'AZURE_STORAGE_CONTAINER_MEDIA', value: 'media' }
             { name: 'DEFAULT_FROM_EMAIL', value: 'Slotly <noreply@slotly.team>' }
           ]
         }

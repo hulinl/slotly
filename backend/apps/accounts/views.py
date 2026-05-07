@@ -1,19 +1,25 @@
 from __future__ import annotations
 
+import uuid
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model, logout
 from django.db import models, transaction
 from django.shortcuts import get_object_or_404
-from rest_framework.permissions import IsAuthenticated
+from django.utils import timezone
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.availability.models import Unavailability
 from apps.calendars.models import Calendar, CalendarEvent
 from apps.notifications.dispatch import notify
 from apps.notifications.models import Notification
 from apps.teams.models import Membership, Team
 
-from .serializers import MeSerializer, TeammateSerializer
+from .serializers import MeSerializer, PublicProfileSerializer, TeammateSerializer
 
 User = get_user_model()
 
@@ -22,15 +28,137 @@ class MeView(APIView):
     """GET / PATCH the authenticated user's profile + working hours."""
 
     permission_classes = [IsAuthenticated]
+    parser_classes = (JSONParser, FormParser, MultiPartParser)
 
     def get(self, request: Request) -> Response:
-        return Response(MeSerializer(request.user).data)
+        return Response(MeSerializer(request.user, context={"request": request}).data)
 
     def patch(self, request: Request) -> Response:
-        serializer = MeSerializer(request.user, data=request.data, partial=True)
+        serializer = MeSerializer(
+            request.user,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(serializer.data)
+        # Avatar comes through request.FILES, not in MeSerializer fields.
+        if "avatar" in request.FILES:
+            request.user.avatar = request.FILES["avatar"]
+            request.user.save(update_fields=["avatar"])
+        return Response(MeSerializer(request.user, context={"request": request}).data)
+
+
+class RegenerateShareTokenView(APIView):
+    """POST /api/me/share/regenerate — invalidate old public link, mint a new one."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: Request) -> Response:
+        request.user.share_token = uuid.uuid4()
+        request.user.save(update_fields=["share_token"])
+        return Response(
+            MeSerializer(request.user, context={"request": request}).data,
+        )
+
+
+class PublicProfileView(APIView):
+    """
+    GET /api/public/profile/<token>?from=YYYY-MM-DD&to=YYYY-MM-DD
+
+    Anonymous read of the user's busy windows + name + avatar + working hours.
+    Returns 404 when share_enabled is False or the token doesn't match —
+    deliberately no signal that "the user exists but is private".
+
+    Window defaults to today through today+56 days when from/to omitted.
+    Cap range to 84 days to keep payload bounded.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes: list = []  # never authenticate, never set session
+
+    def get(self, request: Request, token: uuid.UUID) -> Response:
+        user = User.objects.filter(share_token=token, share_enabled=True).first()
+        if user is None:
+            return Response(status=404)
+
+        from_param = request.query_params.get("from")
+        to_param = request.query_params.get("to")
+        now = timezone.now()
+        try:
+            window_start = (
+                _parse_iso_date(from_param) if from_param else now.replace(
+                    hour=0, minute=0, second=0, microsecond=0,
+                )
+            )
+            window_end = (
+                _parse_iso_date(to_param) if to_param else window_start + timedelta(days=56)
+            )
+        except ValueError:
+            return Response({"detail": "Invalid date format; expected YYYY-MM-DD."}, status=400)
+
+        if window_end <= window_start:
+            return Response({"detail": "to must be after from."}, status=400)
+        if (window_end - window_start) > timedelta(days=84):
+            window_end = window_start + timedelta(days=84)
+
+        # Aggregate busy intervals from calendars + manual unavailability blocks.
+        busy: list[tuple] = []
+        for ev in CalendarEvent.objects.filter(
+            calendar__owner_id=user.pk,
+            calendar__include_in_busy=True,
+            transp=CalendarEvent.Transparency.OPAQUE,
+            dtstart__lt=window_end,
+            dtend__gt=window_start,
+        ).exclude(status=CalendarEvent.Status.CANCELLED).values("dtstart", "dtend"):
+            busy.append((ev["dtstart"], ev["dtend"]))
+        for u in Unavailability.objects.filter(
+            user_id=user.pk,
+            starts_at__lt=window_end,
+            ends_at__gt=window_start,
+        ).values("starts_at", "ends_at"):
+            busy.append((u["starts_at"], u["ends_at"]))
+
+        profile = PublicProfileSerializer(user, context={"request": request}).data
+        return Response({
+            "profile": profile,
+            "window": {
+                "start": window_start.isoformat(),
+                "end": window_end.isoformat(),
+            },
+            "busy": [
+                {"start": s.isoformat(), "end": e.isoformat()}
+                for s, e in busy
+            ],
+            "holidays": _holidays_in_range(user.country, window_start.date(), window_end.date()),
+        })
+
+
+def _holidays_in_range(country: str, from_date, to_date) -> list[dict]:
+    """Return public holidays for `country` falling within [from_date, to_date)."""
+    import holidays as holidays_lib
+    years = list(range(from_date.year, to_date.year + 1))
+    try:
+        entries = holidays_lib.country_holidays(country, years=years, language="en_US")
+    except Exception:  # noqa: BLE001 — some countries lack en_US
+        try:
+            entries = holidays_lib.country_holidays(country, years=years)
+        except Exception:  # noqa: BLE001 — unsupported country code
+            return []
+    return [
+        {"date": d.isoformat(), "name": name}
+        for d, name in sorted(entries.items())
+        if from_date <= d < to_date
+    ]
+
+
+def _parse_iso_date(value: str):
+    """Parse YYYY-MM-DD into a tz-aware datetime at midnight in the app TZ."""
+    from datetime import datetime
+    from django.conf import settings as dj_settings
+    from zoneinfo import ZoneInfo
+    naive = datetime.strptime(value, "%Y-%m-%d")
+    return naive.replace(tzinfo=ZoneInfo(dj_settings.TIME_ZONE))
 
 
 class DeleteMeView(APIView):

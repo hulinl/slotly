@@ -70,6 +70,32 @@ HEADLESS_FRONTEND_URLS = {
     "account_signup": f"{FRONTEND_BASE_URL}/auth/register",
 }
 
+# --- Media (User.avatar) on Azure Blob ---
+# Public-read container so the frontend can <img src=...> directly without
+# signed URLs. Uploads go through Django's default save() flow.
+AZURE_STORAGE_CONNECTION_STRING = env(
+    "AZURE_STORAGE_CONNECTION_STRING",
+    default="",
+)
+AZURE_STORAGE_ACCOUNT_NAME = env("AZURE_STORAGE_ACCOUNT_NAME", default="")
+AZURE_STORAGE_CONTAINER_MEDIA = env("AZURE_STORAGE_CONTAINER_MEDIA", default="media")
+
+if AZURE_STORAGE_CONNECTION_STRING:
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.azure_storage.AzureStorage",
+            "OPTIONS": {
+                "connection_string": AZURE_STORAGE_CONNECTION_STRING,
+                "azure_container": AZURE_STORAGE_CONTAINER_MEDIA,
+                "expiration_secs": None,  # public container; no SAS needed
+            },
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    }
+    MEDIA_URL = f"https://{AZURE_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/{AZURE_STORAGE_CONTAINER_MEDIA}/"
+
 # --- Email: Azure Communication Services (REST SDK, not SMTP) ---
 # ACS doesn't expose SMTP — its native API is REST + connection string.
 # Custom backend lives at apps.notifications.acs_email_backend.
