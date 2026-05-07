@@ -36,7 +36,9 @@ export default function VerifyEmailPage() {
           router.refresh();
           return;
         }
-        if (res.status === 200) {
+        // 200 = verified + auto-logged-in; 401 with no errors = verified,
+        // please log in. Treat both as success.
+        if (!res.errors) {
           setState("success");
           setMessage("Your email is verified. You can sign in now.");
         } else {

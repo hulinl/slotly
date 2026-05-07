@@ -30,7 +30,10 @@ export default function ResetPasswordPage() {
     }
     try {
       const res = await resetPassword(key, password);
-      if (res.status === 200 || res.meta?.is_authenticated) {
+      // allauth-headless returns 200 if the reset auto-logs you in, or 401
+      // with flows: [{id: "login"}] meaning "password changed, now log in".
+      // Treat any response without an `errors` array as success.
+      if (!res.errors) {
         router.replace("/auth/login?reset=ok");
         return;
       }
