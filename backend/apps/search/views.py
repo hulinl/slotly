@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -67,10 +68,14 @@ class SearchView(APIView):
         users = User.objects.filter(pk__in=team_member_ids)
         working_hours_per_user = {u.pk: u.working_hours for u in users}
 
+        # All-day events (vacation, sick day, "off") block the day regardless
+        # of TRANSP — most calendar apps mark them transparent by default but
+        # the human intent is "I'm not available". Time-bound events still
+        # honor TRANSP so that "Lunch" marked free doesn't block.
         events = CalendarEvent.objects.filter(
+            Q(transp=CalendarEvent.Transparency.OPAQUE) | Q(is_all_day=True),
             calendar__owner_id__in=team_member_ids,
             calendar__include_in_busy=True,
-            transp=CalendarEvent.Transparency.OPAQUE,
             dtstart__lt=data["window_end"],
             dtend__gt=data["window_start"],
         ).exclude(

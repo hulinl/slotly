@@ -103,11 +103,13 @@ class PublicProfileView(APIView):
             window_end = window_start + timedelta(days=84)
 
         # Aggregate busy intervals from calendars + manual unavailability blocks.
+        # All-day events count as busy regardless of TRANSP — see SearchView.
+        from django.db.models import Q as _Q
         busy: list[tuple] = []
         for ev in CalendarEvent.objects.filter(
+            _Q(transp=CalendarEvent.Transparency.OPAQUE) | _Q(is_all_day=True),
             calendar__owner_id=user.pk,
             calendar__include_in_busy=True,
-            transp=CalendarEvent.Transparency.OPAQUE,
             dtstart__lt=window_end,
             dtend__gt=window_start,
         ).exclude(status=CalendarEvent.Status.CANCELLED).values("dtstart", "dtend"):
