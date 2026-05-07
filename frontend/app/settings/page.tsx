@@ -430,9 +430,9 @@ function ShareCard({ me, onSaved }: { me: Me; onSaved: (m: Me) => void }) {
                 readOnly
                 value={publicUrl}
                 onFocus={(e) => e.currentTarget.select()}
-                className="font-mono text-xs"
+                className="min-w-0 flex-1 font-mono text-xs"
               />
-              <Button type="button" onClick={copyUrl} disabled={!publicUrl} className="shrink-0">
+              <Button type="button" onClick={copyUrl} disabled={!publicUrl} className="!w-auto shrink-0 px-4">
                 {copied ? "Copied!" : "Copy"}
               </Button>
             </div>
