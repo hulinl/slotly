@@ -309,7 +309,7 @@ resource caBackend 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_STORAGE_CONNECTION_STRING', secretRef: 'storage-conn' }
             { name: 'AZURE_STORAGE_ACCOUNT_NAME', value: storage.name }
             { name: 'AZURE_STORAGE_CONTAINER_MEDIA', value: 'media' }
-            { name: 'DEFAULT_FROM_EMAIL', value: 'Slotly <noreply@slotly.team>' }
+            { name: 'DEFAULT_FROM_EMAIL', value: 'noreply@slotly.team' }
           ]
         }
       ]

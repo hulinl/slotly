@@ -14,6 +14,7 @@ Configuration:
 from __future__ import annotations
 
 import logging
+from email.utils import getaddresses, parseaddr
 from typing import Any
 
 from django.conf import settings
@@ -53,9 +54,19 @@ class AzureCommunicationEmailBackend(BaseEmailBackend):
         sent = 0
         for msg in email_messages:
             try:
+                # Django EmailMessage.from_email can be "Display <addr@host>";
+                # ACS rejects that as a senderAddress. Extract the bare email.
+                _, sender_addr = parseaddr(msg.from_email)
+                if not sender_addr:
+                    sender_addr = msg.from_email  # fall back to whatever was passed
+                # Recipients can also use the "Display <addr>" format, e.g. when
+                # send_mail() is called via allauth. Strip names for ACS.
+                to_addrs = [
+                    {"address": addr} for _name, addr in getaddresses(msg.to) if addr
+                ]
                 payload = {
-                    "senderAddress": msg.from_email,
-                    "recipients": {"to": [{"address": addr} for addr in msg.to]},
+                    "senderAddress": sender_addr,
+                    "recipients": {"to": to_addrs},
                     "content": {
                         "subject": msg.subject,
                         "plainText": msg.body,
