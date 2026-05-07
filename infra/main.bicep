@@ -304,6 +304,152 @@ resource swa 'Microsoft.Web/staticSites@2023-12-01' = if (!empty(githubToken)) {
   }
 }
 
+// ===========================================================================
+// Azure DNS — owns slotly.team. Registration stays at webglobe; we just
+// move the NS records there to point at Azure DNS so we can use ALIAS at
+// apex (the only Azure-supported way to put a Static Web App on the apex).
+// ===========================================================================
+@description('SWA validation token for apex slotly.team (TXT _dnsauth). Re-run az staticwebapp hostname show to refresh.')
+param swaApexValidationToken string = '_k0fptuhbwrdb004kl7pisaf70v8c12q'
+
+@description('SWA validation token for www.slotly.team (TXT _dnsauth.www).')
+param swaWwwValidationToken string = '_j5og1lp7t3d7gye1pfw7tpsehqrjgyz'
+
+@description('Container App env customDomainVerificationId (TXT asuid.api).')
+param caBackendVerificationId string = '11E901F8148387D9CC9786CD5B79BD7F096D4471C57C8A64EE778E84E5D99E21'
+
+@description('ACS slotly.team domain ownership token (TXT @, ms-domain-verification=<this>).')
+param acsDomainVerificationId string = '6334de67-0a6e-488f-87c6-e2f113279db0'
+
+resource dnsZone 'Microsoft.Network/dnsZones@2018-05-01' = {
+  name: 'slotly.team'
+  location: 'global'
+  properties: {
+    zoneType: 'Public'
+  }
+}
+
+// --- Apex ALIAS to the Static Web App resource. This is what makes
+// https://slotly.team possible without a third-party DNS provider.
+resource apexAlias 'Microsoft.Network/dnsZones/A@2018-05-01' = if (!empty(githubToken)) {
+  parent: dnsZone
+  name: '@'
+  properties: {
+    TTL: 3600
+    targetResource: {
+      id: swa.id
+    }
+  }
+}
+
+// --- Apex TXT: ACS domain verification + SPF. Two record values, one set.
+resource apexTxt 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
+  parent: dnsZone
+  name: '@'
+  properties: {
+    TTL: 3600
+    TXTRecords: [
+      { value: ['ms-domain-verification=${acsDomainVerificationId}'] }
+      { value: ['v=spf1 include:spf.protection.outlook.com -all'] }
+    ]
+  }
+}
+
+// --- Apex SWA validation
+resource dnsauthApex 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
+  parent: dnsZone
+  name: '_dnsauth'
+  properties: {
+    TTL: 3600
+    TXTRecords: [
+      { value: [swaApexValidationToken] }
+    ]
+  }
+}
+
+// --- www SWA validation
+resource dnsauthWww 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
+  parent: dnsZone
+  name: '_dnsauth.www'
+  properties: {
+    TTL: 3600
+    TXTRecords: [
+      { value: [swaWwwValidationToken] }
+    ]
+  }
+}
+
+// --- api Container App ownership
+resource asuidApi 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
+  parent: dnsZone
+  name: 'asuid.api'
+  properties: {
+    TTL: 3600
+    TXTRecords: [
+      { value: [caBackendVerificationId] }
+    ]
+  }
+}
+
+// --- DMARC
+resource dmarc 'Microsoft.Network/dnsZones/TXT@2018-05-01' = {
+  parent: dnsZone
+  name: '_dmarc'
+  properties: {
+    TTL: 3600
+    TXTRecords: [
+      { value: ['v=DMARC1; p=none; rua=mailto:hulin@bifactory.cz'] }
+    ]
+  }
+}
+
+// --- www → SWA
+resource cnameWww 'Microsoft.Network/dnsZones/CNAME@2018-05-01' = if (!empty(githubToken)) {
+  parent: dnsZone
+  name: 'www'
+  properties: {
+    TTL: 3600
+    CNAMERecord: {
+      cname: swa.properties.defaultHostname
+    }
+  }
+}
+
+// --- api → Container App
+resource cnameApi 'Microsoft.Network/dnsZones/CNAME@2018-05-01' = {
+  parent: dnsZone
+  name: 'api'
+  properties: {
+    TTL: 3600
+    CNAMERecord: {
+      cname: caBackend.properties.configuration.ingress.fqdn
+    }
+  }
+}
+
+// --- DKIM CNAMEs (for ACS slotly.team email)
+resource dkim1 'Microsoft.Network/dnsZones/CNAME@2018-05-01' = {
+  parent: dnsZone
+  name: 'selector1-azurecomm-prod-net._domainkey'
+  properties: {
+    TTL: 3600
+    CNAMERecord: {
+      cname: 'selector1-azurecomm-prod-net._domainkey.azurecomm.net'
+    }
+  }
+}
+
+resource dkim2 'Microsoft.Network/dnsZones/CNAME@2018-05-01' = {
+  parent: dnsZone
+  name: 'selector2-azurecomm-prod-net._domainkey'
+  properties: {
+    TTL: 3600
+    CNAMERecord: {
+      cname: 'selector2-azurecomm-prod-net._domainkey.azurecomm.net'
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Outputs — used by deploy.sh and DNS configuration
 // ---------------------------------------------------------------------------
@@ -322,3 +468,6 @@ output staticWebName string = empty(githubToken) ? '' : swa.name
 
 output emailSenderDomain string = emailDomain.properties.fromSenderDomain
 output communicationServiceName string = comm.name
+
+output dnsZoneName string = dnsZone.name
+output dnsNameServers array = dnsZone.properties.nameServers
