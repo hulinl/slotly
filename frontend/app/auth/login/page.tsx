@@ -1,13 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { getSession, login, logout, needsEmailVerification } from "@/lib/auth";
 import { Button, FormError, Input, Label } from "@/components/ui";
 
+/** Only allow same-origin path redirects to keep the next= parameter from
+ * being abused as an open redirect. */
+function safeNext(raw: string | null): string {
+  if (!raw) return "/";
+  try {
+    const decoded = decodeURIComponent(raw);
+    if (decoded.startsWith("/") && !decoded.startsWith("//")) return decoded;
+  } catch {
+    // fall through
+  }
+  return "/";
+}
+
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = safeNext(searchParams.get("next"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -35,7 +50,7 @@ export default function LoginPage() {
         return;
       }
       if (res.meta?.is_authenticated) {
-        router.replace("/");
+        router.replace(next);
         router.refresh();
         return;
       }
