@@ -111,6 +111,8 @@ export default function CalendarsPage() {
           onAdded={(cal) => setCalendars((prev) => [cal, ...prev.filter((c) => c.id !== cal.id)])}
         />
 
+        <BusyRulesHelp />
+
         <CalendarList
           calendars={calendars}
           onChange={setCalendars}
@@ -198,6 +200,52 @@ function AddCalendarForm({ onAdded }: { onAdded: (cal: Calendar) => void }) {
         </Button>
       </form>
     </section>
+  );
+}
+
+function BusyRulesHelp() {
+  return (
+    <details className="group/help overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-zinc-900 dark:text-zinc-100 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+        <HelpCircle size={16} className="shrink-0" aria-hidden="true" />
+        <span className="flex-1">What counts as &ldquo;busy&rdquo; in Slotly?</span>
+        <ChevronDown
+          size={16}
+          className="shrink-0 transition-transform group-open/help:rotate-180"
+          aria-hidden="true"
+        />
+      </summary>
+      <div className="space-y-3 border-t border-zinc-200 px-4 py-3 text-sm text-zinc-700 dark:border-zinc-800 dark:text-zinc-300">
+        <p>
+          When Slotly searches for free time, it intersects everyone&apos;s
+          working hours and subtracts their busy intervals. An event from
+          your calendar counts as &ldquo;busy&rdquo; when:
+        </p>
+        <ul className="ml-4 list-disc space-y-1">
+          <li>It&apos;s inside the search window <em>and</em> not cancelled.</li>
+          <li>
+            It&apos;s either marked <strong>busy</strong> by your calendar
+            (default for normal time-bound events) <strong>or</strong> it&apos;s
+            an <strong>all-day event</strong>. All-day events block the whole
+            day even if your calendar marks them &ldquo;free&rdquo; — typical
+            use is vacation, sick day, or out-of-office.
+          </li>
+          <li>
+            Manual <em>Unavailability</em> blocks (Profile → Unavailability)
+            also count and are independent of any calendar.
+          </li>
+        </ul>
+        <p>
+          What does <em>not</em> block: events you marked &ldquo;Show as
+          free&rdquo; in your calendar (e.g. a lunch reminder), cancelled
+          events, and tentative events whose calendar marks them transparent.
+        </p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          Slotly never reads event titles, descriptions, or attendees — only
+          start/end and busy/free flags.
+        </p>
+      </div>
+    </details>
   );
 }
 
