@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { getSession, login, logout, needsEmailVerification } from "@/lib/auth";
 import { Button, FormError, Input, Label } from "@/components/ui";
 
@@ -20,6 +20,14 @@ function safeNext(raw: string | null): string {
 }
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="text-sm text-zinc-500">Loading…</div>}>
+      <LoginPageInner />
+    </Suspense>
+  );
+}
+
+function LoginPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = safeNext(searchParams.get("next"));
