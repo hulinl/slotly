@@ -19,6 +19,57 @@ s, created = Site.objects.update_or_create(
 print(f'Site: {s.name} ({s.domain}) — created={created}')
 " || true
 
+# Diagnostic: validate a password-reset key end-to-end and dump the reason
+# it succeeds or fails. Set DEBUG_RESET_KEY="<email>:<key>" to use.
+if [[ -n "${DEBUG_RESET_KEY:-}" ]]; then
+  echo "==> DEBUG_RESET_KEY validation"
+  DEBUG_RESET_KEY="$DEBUG_RESET_KEY" python manage.py shell <<'PYEOF' || true
+import os
+from django.contrib.auth import get_user_model
+from django.utils.http import base36_to_int
+from allauth.account.forms import EmailAwarePasswordResetTokenGenerator
+from allauth.account.models import EmailAddress
+import datetime as _dt
+
+raw = os.environ["DEBUG_RESET_KEY"]
+email, _, key = raw.partition(":")
+print(f"  email='{email}', key='{key}'")
+User = get_user_model()
+u = User.objects.filter(email__iexact=email).first()
+if not u:
+    print("  user not found")
+else:
+    print(f"  user_id={u.pk}, last_login={u.last_login}, password_hash_prefix={u.password[:20]}...")
+    primaries = list(EmailAddress.objects.filter(user=u, primary=True).values_list("email", "verified"))
+    print(f"  primary EmailAddresses={primaries}")
+    parts = key.split("-", 1)
+    if len(parts) != 2:
+        print(f"  KEY FORMAT INVALID — expected '<uid>-<token>', got {parts!r}")
+    else:
+        uid_str, token = parts
+        try:
+            uid = base36_to_int(uid_str)
+            print(f"  uid (base36 decoded) = {uid}")
+        except Exception as e:
+            print(f"  uid decode error: {e}")
+            uid = None
+        if uid != u.pk:
+            print(f"  WARNING: uid in key ({uid}) != email's user_id ({u.pk})")
+        gen = EmailAwarePasswordResetTokenGenerator()
+        valid = gen.check_token(u, token)
+        print(f"  check_token() returned: {valid}")
+        if not valid:
+            # Try the next-bigger window manually to see if it's just timeout
+            ts_b36 = token.split("-")[0]
+            try:
+                ts = base36_to_int(ts_b36)
+                age = gen._num_seconds(gen._now()) - ts
+                print(f"  token timestamp seconds={ts}, age_seconds={age}, timeout=259200 (3d)")
+            except Exception as e:
+                print(f"  ts decode error: {e}")
+PYEOF
+fi
+
 # Bootstrap fix: force-verify accounts whose verification email confused
 # them or never arrived. Set BOOTSTRAP_VERIFY_EMAILS to a comma-separated
 # list and the next container start will mark each EmailAddress verified.
