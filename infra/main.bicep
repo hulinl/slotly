@@ -131,14 +131,6 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
 // ===========================================================================
 // Communication Services + Email Service (managed sender domain)
 // ===========================================================================
-resource comm 'Microsoft.Communication/CommunicationServices@2023-04-01' = {
-  name: commName
-  location: 'global'
-  properties: {
-    dataLocation: 'Europe'
-  }
-}
-
 resource emailService 'Microsoft.Communication/EmailServices@2023-04-01' = {
   name: emailServiceName
   location: 'global'
@@ -167,6 +159,31 @@ resource emailCustomDomain 'Microsoft.Communication/EmailServices/Domains@2023-0
   properties: {
     domainManagement: 'CustomerManaged'
     userEngagementTracking: 'Disabled'
+  }
+}
+
+// noreply@slotly.team sender. Resource creation only succeeds after the
+// parent domain finishes verification.
+resource noreplySender 'Microsoft.Communication/EmailServices/Domains/SenderUsernames@2023-04-01' = {
+  parent: emailCustomDomain
+  name: 'noreply'
+  properties: {
+    username: 'noreply'
+    displayName: 'Slotly'
+  }
+}
+
+// Communication Service must explicitly link to each Email Domain it can
+// send from. Otherwise sends fail with "DomainNotLinked".
+resource comm 'Microsoft.Communication/CommunicationServices@2023-04-01' = {
+  name: commName
+  location: 'global'
+  properties: {
+    dataLocation: 'Europe'
+    linkedDomains: [
+      emailDomain.id
+      emailCustomDomain.id
+    ]
   }
 }
 
@@ -247,7 +264,7 @@ resource caBackend 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'DATABASE_URL', secretRef: 'pg-url' }
             { name: 'CALENDAR_URL_ENCRYPTION_KEY', secretRef: 'cal-key' }
             { name: 'AZURE_COMMUNICATION_CONNECTION_STRING', secretRef: 'acs-conn' }
-            { name: 'DEFAULT_FROM_EMAIL', value: 'DoNotReply@${emailDomain.properties.fromSenderDomain}' }
+            { name: 'DEFAULT_FROM_EMAIL', value: 'Slotly <noreply@slotly.team>' }
           ]
         }
       ]
