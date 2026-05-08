@@ -100,6 +100,30 @@ export function computeFreeSlots(
   return out.map((f) => ({ start: f.start.toISOString(), end: f.end.toISOString() }));
 }
 
+/** Reduce a per-weekday WorkingHours object to [minStartHour, maxEndHour]
+ * across the days that are marked available. Returns undefined when there
+ * are no available days. Used to anchor the SlotsCalendar time axis so it
+ * shows the user's working window even when the only free slots are
+ * deep inside it. */
+export function workingHoursRangeFromHours(
+  wh: WorkingHours,
+): [number, number] | undefined {
+  let minStart = 24;
+  let maxEnd = 0;
+  let any = false;
+  for (const day of Object.values(wh)) {
+    if (!day.available) continue;
+    any = true;
+    const [sh] = day.start.split(":").map(Number);
+    const [eh, em] = day.end.split(":").map(Number);
+    if (sh < minStart) minStart = sh;
+    const endHourCeil = em > 0 ? eh + 1 : eh;
+    if (endHourCeil > maxEnd) maxEnd = endHourCeil;
+  }
+  if (!any) return undefined;
+  return [minStart, maxEnd];
+}
+
 export function getInitials(displayName: string): string {
   const parts = displayName.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";

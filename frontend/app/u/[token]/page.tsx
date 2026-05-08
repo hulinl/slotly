@@ -16,6 +16,7 @@ import {
   getInitials,
   getPublicProfile,
   PublicProfileNotFoundError,
+  workingHoursRangeFromHours,
   type PublicProfileResponse,
 } from "@/lib/public-profile";
 
@@ -126,7 +127,12 @@ export default function PublicProfilePage() {
             No free time in the upcoming weeks.
           </div>
         ) : (
-          <SlotsCalendar slots={slots} durationMin={30} holidays={holidayMap} />
+          <SlotsCalendar
+            slots={slots}
+            durationMin={30}
+            holidays={holidayMap}
+            workingHoursRange={workingHoursRangeFromHours(data.profile.working_hours)}
+          />
         )}
 
         <p className="mt-6 text-center text-xs text-zinc-500 dark:text-zinc-500">

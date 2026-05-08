@@ -36,6 +36,7 @@ export function SlotsCalendar({
   slots,
   durationMin,
   holidays,
+  workingHoursRange,
 }: {
   slots: Slot[];
   durationMin: number;
@@ -43,6 +44,12 @@ export function SlotsCalendar({
    * small flag in the header so users notice when the slot they're picking
    * lands on a national holiday. */
   holidays?: Map<string, string>;
+  /** Optional [startHour, endHour] (0-24, hour granularity) of the user's
+   * working day. When provided, the time axis includes at least this range
+   * so the user can see the "lead-up" to their first free slot — otherwise
+   * a working day with one 9:00 free slot would clip the axis to 9-..., not
+   * showing the 8:00-9:00 busy band before it. */
+  workingHoursRange?: [number, number];
 }) {
   const intervalsByDay = useMemo(() => groupAndMerge(slots), [slots]);
 
@@ -84,18 +91,33 @@ export function SlotsCalendar({
 
   const visibleDays = Array.from({ length: viewDays }, (_, i) => addDays(viewStart, i));
 
-  // Auto-fit time axis to this view's data, with sane defaults when empty.
+  // Auto-fit time axis. Start from working-hours range when supplied, then
+  // expand to cover any slots that fall outside. With no working hours and
+  // no slots, fall back to the global default 7-19 band.
   const visibleIntervals = visibleDays.flatMap((d) => intervalsByDay.get(toDayKey(d)) ?? []);
-  const minHour = visibleIntervals.length
-    ? Math.max(0, Math.min(...visibleIntervals.map((i) => i.start.getHours())))
-    : DEFAULT_MIN_HOUR;
-  const maxHour = visibleIntervals.length
-    ? Math.min(
-        24,
-        Math.max(...visibleIntervals.map((i) => Math.ceil(toMinutes(i.end) / 60))),
-      )
-    : DEFAULT_MAX_HOUR;
-  const hours = Array.from({ length: maxHour - minHour }, (_, i) => minHour + i);
+  const slotMin = visibleIntervals.length
+    ? Math.min(...visibleIntervals.map((i) => i.start.getHours()))
+    : null;
+  const slotMax = visibleIntervals.length
+    ? Math.max(...visibleIntervals.map((i) => Math.ceil(toMinutes(i.end) / 60)))
+    : null;
+  const candidates = [
+    workingHoursRange?.[0] ?? null,
+    slotMin,
+  ].filter((n): n is number => n !== null);
+  const candidatesMax = [
+    workingHoursRange?.[1] ?? null,
+    slotMax,
+  ].filter((n): n is number => n !== null);
+  const minHour = Math.max(
+    0,
+    candidates.length ? Math.min(...candidates) : DEFAULT_MIN_HOUR,
+  );
+  const maxHour = Math.min(
+    24,
+    candidatesMax.length ? Math.max(...candidatesMax) : DEFAULT_MAX_HOUR,
+  );
+  const hours = Array.from({ length: Math.max(0, maxHour - minHour) }, (_, i) => minHour + i);
 
   const totalSlotsThisView = visibleIntervals.length;
 

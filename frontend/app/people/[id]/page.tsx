@@ -18,6 +18,7 @@ import {
   type Unavailability,
 } from "@/lib/availability";
 import { WEEKDAYS, type Weekday } from "@/lib/me";
+import { workingHoursRangeFromHours } from "@/lib/public-profile";
 import { fetchHolidaysForRange } from "@/lib/holidays";
 import { searchSlots, type Slot } from "@/lib/search";
 import { getTeammate, UsersApiError, type Teammate } from "@/lib/users";
@@ -237,7 +238,12 @@ export default function TeammateProfilePage() {
           {searching && !slots ? (
             <CardSkeleton rows={6} />
           ) : slots && slots.length > 0 ? (
-            <SlotsCalendar slots={slots} durationMin={60} holidays={holidays} />
+            <SlotsCalendar
+              slots={slots}
+              durationMin={60}
+              holidays={holidays}
+              workingHoursRange={user ? workingHoursRangeFromHours(user.working_hours) : undefined}
+            />
           ) : (
             <section className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
               {user.shared_team_ids.length === 0

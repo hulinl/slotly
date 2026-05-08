@@ -28,6 +28,7 @@ import {
   colorFromName,
   computeFreeSlots,
   getInitials,
+  workingHoursRangeFromHours,
   type PublicProfileResponse,
 } from "@/lib/public-profile";
 
@@ -171,7 +172,12 @@ export default function ProfilePage() {
               No free time in the upcoming weeks.
             </div>
           ) : (
-            <SlotsCalendar slots={slots} durationMin={30} holidays={holidayMap} />
+            <SlotsCalendar
+              slots={slots}
+              durationMin={30}
+              holidays={holidayMap}
+              workingHoursRange={workingHoursRangeFromHours(data.profile.working_hours)}
+            />
           )}
         </section>
 
