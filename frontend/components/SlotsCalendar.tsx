@@ -46,16 +46,20 @@ export function SlotsCalendar({
 }) {
   const intervalsByDay = useMemo(() => groupAndMerge(slots), [slots]);
 
-  // viewDays — start with desktop default during SSR; refine on mount based
-  // on real window width, and re-pick on resize so flipping orientations
-  // does the right thing.
-  const [viewDays, setViewDays] = useState<ViewDays>(7);
+  // viewDays — start with desktop default during SSR; pick a sensible
+  // default on mount based on real window width. After the user explicitly
+  // toggles, we stop overriding so a phone scroll (which fires `resize`
+  // when the URL bar hides) doesn't bounce them back to 1d view.
+  const [viewDays, _setViewDays] = useState<ViewDays>(7);
+  const [userPicked, setUserPicked] = useState(false);
+  function setViewDays(v: ViewDays) {
+    _setViewDays(v);
+    setUserPicked(true);
+  }
   useEffect(() => {
-    const apply = () => setViewDays(defaultViewForWidth(window.innerWidth));
-    apply();
-    window.addEventListener("resize", apply);
-    return () => window.removeEventListener("resize", apply);
-  }, []);
+    if (userPicked) return;
+    _setViewDays(defaultViewForWidth(window.innerWidth));
+  }, [userPicked]);
 
   // Default the calendar to the start of the period that contains the first slot.
   const sortedDayKeys = useMemo(
