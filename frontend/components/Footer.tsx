@@ -22,7 +22,13 @@ export function Footer() {
           <img
             src="/bifactory-logo.png"
             alt="BIfactory"
-            className="h-6 w-6 rounded bg-white p-0.5 dark:ring-1 dark:ring-zinc-700"
+            className="h-6 w-6 dark:hidden"
+          />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/bifactory-logo-white.png"
+            alt="BIfactory"
+            className="hidden h-6 w-6 dark:block"
           />
           <span>BIfactory s.r.o.</span>
         </Link>
