@@ -6,9 +6,11 @@
  * otherwise. No nav, no auth required, OG tags for nice link previews.
  */
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Globe } from "lucide-react";
+import { Logo } from "@/components/Logo";
 import { SlotsCalendar } from "@/components/SlotsCalendar";
 import {
   colorFromName,
@@ -89,6 +91,26 @@ export default function PublicProfilePage() {
 
   return (
     <main className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+      {/* Top brand bar — same Slotly mark as the authed app, so visitors know
+          immediately whose service is showing them this page. */}
+      <div className="border-b border-zinc-200 bg-white px-6 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="mx-auto flex max-w-3xl items-center justify-between">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-zinc-900 hover:text-indigo-600 dark:text-zinc-100 dark:hover:text-indigo-400"
+            aria-label="Slotly home"
+          >
+            <Logo size={20} />
+            <span>Slotly</span>
+          </Link>
+          <Link
+            href="/auth/register"
+            className="text-xs font-medium text-zinc-500 hover:text-indigo-600 dark:text-zinc-400 dark:hover:text-indigo-400"
+          >
+            Get your own
+          </Link>
+        </div>
+      </div>
       <header className="border-b border-zinc-200 bg-white py-10 dark:border-zinc-800 dark:bg-zinc-900">
         <div className="mx-auto flex max-w-3xl items-center gap-5 px-6">
           {avatar_url ? (
