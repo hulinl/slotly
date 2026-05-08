@@ -20,6 +20,16 @@ const DEFAULT_MAX_HOUR = 19;
 type FreeInterval = { start: Date; end: Date };
 type ViewDays = 1 | 3 | 7;
 
+/** A user-managed "I'm not available" block. Rendered on the calendar
+ * as an amber band — distinct from the green free intervals. */
+export type UnavailabilityBlock = {
+  id: number;
+  label: string;
+  starts_at: string;
+  ends_at: string;
+  is_all_day: boolean;
+};
+
 const VIEW_LABEL: Record<ViewDays, string> = {
   1: "Day",
   3: "3 days",
@@ -37,6 +47,8 @@ export function SlotsCalendar({
   durationMin,
   holidays,
   workingHoursRange,
+  unavailabilityBlocks,
+  onDeleteUnavailability,
 }: {
   slots: Slot[];
   durationMin: number;
@@ -50,8 +62,17 @@ export function SlotsCalendar({
    * a working day with one 9:00 free slot would clip the axis to 9-..., not
    * showing the 8:00-9:00 busy band before it. */
   workingHoursRange?: [number, number];
+  /** User's manual "I'm out" blocks. Rendered as amber bands on the days
+   * they cover. When `onDeleteUnavailability` is also provided, clicking
+   * a band confirms then deletes. */
+  unavailabilityBlocks?: UnavailabilityBlock[];
+  onDeleteUnavailability?: (id: number) => void | Promise<void>;
 }) {
   const intervalsByDay = useMemo(() => groupAndMerge(slots), [slots]);
+  const blocksByDay = useMemo(
+    () => unavailabilityByDay(unavailabilityBlocks ?? []),
+    [unavailabilityBlocks],
+  );
 
   // viewDays — start with desktop default during SSR; pick a sensible
   // default on mount based on real window width. After the user explicitly
@@ -283,6 +304,48 @@ export function SlotsCalendar({
                   style={{ top: i * HOUR_PX }}
                 />
               ))}
+              {/* user's unavailability blocks (drawn under free intervals so
+                  click priority on overlapping free wins, though they shouldn't
+                  overlap in practice — the search engine already excludes
+                  unavailability from busy). */}
+              {(blocksByDay.get(toDayKey(day)) ?? []).map((b) => {
+                const top = b.isAllDay
+                  ? 0
+                  : Math.max(0, ((b.dayStartMin - minHour * 60) * HOUR_PX) / 60);
+                const height = b.isAllDay
+                  ? hours.length * HOUR_PX
+                  : Math.max(18, ((b.dayEndMin - b.dayStartMin) * HOUR_PX) / 60);
+                const clickable = !!onDeleteUnavailability;
+                return (
+                  <div
+                    key={`u-${b.id}-${day.toISOString()}`}
+                    className={
+                      "absolute inset-x-1 overflow-hidden rounded border border-amber-300 bg-amber-100 px-1 py-0.5 text-[11px] leading-tight text-amber-900 dark:border-amber-700/60 dark:bg-amber-900/40 dark:text-amber-100 " +
+                      (clickable
+                        ? "cursor-pointer transition-colors hover:bg-amber-200 dark:hover:bg-amber-900/60"
+                        : "")
+                    }
+                    style={{ top, height }}
+                    title={
+                      clickable
+                        ? `Click to delete "${b.label}"`
+                        : b.label
+                    }
+                    onClick={() => {
+                      if (!onDeleteUnavailability) return;
+                      if (!confirm(`Delete "${b.label}"?`)) return;
+                      void onDeleteUnavailability(b.id);
+                    }}
+                  >
+                    <div className="font-medium">
+                      {b.label}
+                      {b.isAllDay && (
+                        <span className="ml-1 text-[10px] opacity-70">all day</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
               {/* free interval blocks */}
               {intervals.map((iv, i) => {
                 const startMin = toMinutes(iv.start);
@@ -320,6 +383,53 @@ export function SlotsCalendar({
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
+
+/** For each visible day, return the unavailability block portions that
+ * overlap it. A multi-day all-day block contributes one entry per day it
+ * spans; a time-bound block is clipped to the day window. */
+type BlockInDay = {
+  id: number;
+  label: string;
+  isAllDay: boolean;
+  dayStartMin: number;  // minutes from 00:00 local
+  dayEndMin: number;
+};
+
+function unavailabilityByDay(blocks: UnavailabilityBlock[]): Map<string, BlockInDay[]> {
+  const out = new Map<string, BlockInDay[]>();
+  for (const b of blocks) {
+    const start = new Date(b.starts_at);
+    const end = new Date(b.ends_at);
+    if (end <= start) continue;
+    // Walk each day from start's local midnight to (end's local) midnight.
+    const cursor = new Date(start);
+    cursor.setHours(0, 0, 0, 0);
+    while (cursor < end) {
+      const dayStart = new Date(cursor);
+      const dayEnd = new Date(cursor);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      const segStart = start > dayStart ? start : dayStart;
+      const segEnd = end < dayEnd ? end : dayEnd;
+      if (segEnd > segStart) {
+        const dayMs = dayStart.getTime();
+        const startMin = Math.floor((segStart.getTime() - dayMs) / 60_000);
+        const endMin = Math.ceil((segEnd.getTime() - dayMs) / 60_000);
+        const key = toDayKey(cursor);
+        const list = out.get(key) ?? [];
+        list.push({
+          id: b.id,
+          label: b.label,
+          isAllDay: b.is_all_day,
+          dayStartMin: startMin,
+          dayEndMin: endMin,
+        });
+        out.set(key, list);
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+  return out;
+}
 
 function groupAndMerge(slots: Slot[]): Map<string, FreeInterval[]> {
   const byDay = new Map<string, FreeInterval[]>();

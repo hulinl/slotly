@@ -44,6 +44,7 @@ export default function ProfilePage() {
   const [meId, setMeId] = useState<number | null>(null);
   const [data, setData] = useState<PublicProfileResponse | null>(null);
   const [unavailabilities, setUnavailabilities] = useState<Unavailability[] | null>(null);
+  const [adding, setAdding] = useState(false);
 
   async function refreshUnavailabilities(uid: number) {
     try {
@@ -162,11 +163,23 @@ export default function ProfilePage() {
           </p>
         </section>
 
-        {/* Availability calendar */}
+        {/* Availability calendar with inline unavailability blocks */}
         <section className="space-y-2">
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-            Your availability — next 8 weeks
-          </h2>
+          <header className="flex items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+              Your availability — next 8 weeks
+            </h2>
+            <Button
+              variant="secondary"
+              onClick={() => setAdding(true)}
+              className="!w-auto px-3"
+            >
+              + Add unavailability
+            </Button>
+          </header>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            Green = free. Amber = blocks you marked unavailable (click to delete).
+          </p>
           {slots.length === 0 ? (
             <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
               No free time in the upcoming weeks.
@@ -177,16 +190,44 @@ export default function ProfilePage() {
               durationMin={30}
               holidays={holidayMap}
               workingHoursRange={workingHoursRangeFromHours(data.profile.working_hours)}
+              unavailabilityBlocks={unavailabilities ?? []}
+              onDeleteUnavailability={async (id) => {
+                try {
+                  await deleteUnavailability(id);
+                  await refreshUnavailabilities(meId);
+                } catch (err) {
+                  alert(err instanceof Error ? err.message : "Delete failed");
+                }
+              }}
             />
           )}
         </section>
-
-        {/* Unavailability blocks */}
-        <UnavailabilitySection
-          rows={unavailabilities}
-          onChanged={() => refreshUnavailabilities(meId)}
-        />
       </main>
+
+      {adding && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal
+          onClick={(e) => {
+            // Close when the backdrop itself is clicked.
+            if (e.target === e.currentTarget) setAdding(false);
+          }}
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-zinc-900">
+            <h3 className="mb-3 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              Add unavailability
+            </h3>
+            <AddUnavailabilityForm
+              onCancel={() => setAdding(false)}
+              onSaved={async () => {
+                setAdding(false);
+                await refreshUnavailabilities(meId);
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
