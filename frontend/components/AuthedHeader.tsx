@@ -88,7 +88,8 @@ export function AuthedHeader({ email }: { email: string }) {
   return (
     <header
       ref={headerRef}
-      className="relative flex items-center justify-between gap-3 border-b border-zinc-200 bg-white/70 px-4 py-3 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/70 sm:px-6"
+      style={{ ["--header-h" as string]: "60px" }}
+      className="sticky top-0 z-40 flex h-[60px] items-center justify-between gap-3 border-b border-zinc-200 bg-white px-4 dark:border-zinc-800 dark:bg-zinc-950 sm:px-6"
     >
       {/* Left: logo + desktop nav */}
       <div className="flex items-center gap-4 text-sm sm:gap-6">
@@ -150,10 +151,12 @@ export function AuthedHeader({ email }: { email: string }) {
         </button>
       </div>
 
-      {/* Mobile dropdown menu — z-[60] to safely cover sticky SettingsNav. */}
+      {/* Mobile dropdown menu — sits inside the sticky header's stacking
+          context (z-40), so any z-index here automatically wins over the
+          sticky SettingsNav further down the page. */}
       {menuOpen && (
         <div
-          className="absolute inset-x-0 top-full z-[60] border-b border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-950 sm:hidden"
+          className="absolute inset-x-0 top-full z-50 border-b border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-950 sm:hidden"
           role="menu"
         >
           <nav className="flex flex-col py-2">

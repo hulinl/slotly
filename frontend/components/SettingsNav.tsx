@@ -41,7 +41,10 @@ const TABS: SettingsTab[] = [
 export function SettingsNav() {
   const pathname = usePathname() ?? "";
   return (
-    <nav className="sticky top-0 z-10 -mx-6 mb-2 overflow-x-auto border-b border-zinc-200 bg-white px-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 sm:-mx-0 sm:rounded-lg sm:border sm:px-1 sm:dark:bg-zinc-900">
+    <nav
+      className="sticky z-10 -mx-6 mb-2 overflow-x-auto border-b border-zinc-200 bg-white px-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 sm:-mx-0 sm:rounded-lg sm:border sm:px-1 sm:dark:bg-zinc-900"
+      style={{ top: "var(--header-h, 60px)" }}
+    >
       <ul className="flex min-w-max items-center gap-1 py-2">
         {TABS.map((t) => {
           const Icon = t.icon;
