@@ -98,6 +98,19 @@ provision() {
   echo "  outputs:"
   python3 -m json.tool < "$SECRETS/last_outputs.json"
 
+  # Bicep doesn't currently declare the Container App custom-hostname
+  # binding, so every redeploy wipes api.slotly.team. Idempotently
+  # re-add + re-bind here so callers don't have to remember.
+  for host in api.slotly.team; do
+    if ! az containerapp hostname list -g "$RG" -n slotly-backend \
+        --query "[?name=='$host'] | length(@)" -o tsv 2>/dev/null | grep -q '^1$'; then
+      echo "==> Re-binding $host on slotly-backend..."
+      az containerapp hostname add -g "$RG" -n slotly-backend --hostname "$host" >/dev/null 2>&1 || true
+      az containerapp hostname bind -g "$RG" -n slotly-backend --hostname "$host" \
+        --environment slotly-env --validation-method CNAME >/dev/null 2>&1 || true
+    fi
+  done
+
   echo
   echo "✓ Provisioning complete. Outputs saved to $SECRETS/last_outputs.json"
 }
