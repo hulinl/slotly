@@ -1,9 +1,10 @@
 "use client";
 
 /**
- * Weekly calendar view of search results. Each day is a column; the time
- * axis runs vertically. Adjacent slots that are 15 minutes apart get merged
- * into a single free-block — a 1-hour search returning slots every 15 min
+ * Calendar grid of free intervals. Defaults to 7-day week on desktop, 3-day
+ * range on tablet, single-day on phone, with a Day/3/Week toggle. Each day
+ * is a column; the time axis runs vertically. Adjacent slots ≤15 min apart
+ * merge into a single block — a 1-hour search returning slots every 15 min
  * from 08:00 to 16:00 collapses to one block "08:00 – 17:00" rather than
  * 33 stacked tiles.
  */
@@ -17,6 +18,19 @@ const DEFAULT_MIN_HOUR = 7;
 const DEFAULT_MAX_HOUR = 19;
 
 type FreeInterval = { start: Date; end: Date };
+type ViewDays = 1 | 3 | 7;
+
+const VIEW_LABEL: Record<ViewDays, string> = {
+  1: "Day",
+  3: "3 days",
+  7: "Week",
+};
+
+function defaultViewForWidth(w: number): ViewDays {
+  if (w < 640) return 1;
+  if (w < 1024) return 3;
+  return 7;
+}
 
 export function SlotsCalendar({
   slots,
@@ -32,27 +46,42 @@ export function SlotsCalendar({
 }) {
   const intervalsByDay = useMemo(() => groupAndMerge(slots), [slots]);
 
-  // Default the calendar to the first week that contains a slot.
+  // viewDays — start with desktop default during SSR; refine on mount based
+  // on real window width, and re-pick on resize so flipping orientations
+  // does the right thing.
+  const [viewDays, setViewDays] = useState<ViewDays>(7);
+  useEffect(() => {
+    const apply = () => setViewDays(defaultViewForWidth(window.innerWidth));
+    apply();
+    window.addEventListener("resize", apply);
+    return () => window.removeEventListener("resize", apply);
+  }, []);
+
+  // Default the calendar to the start of the period that contains the first slot.
   const sortedDayKeys = useMemo(
     () => Array.from(intervalsByDay.keys()).sort(),
     [intervalsByDay],
   );
-  const [weekStart, setWeekStart] = useState<Date>(() =>
-    sortedDayKeys.length > 0 ? mondayOf(parseDayKey(sortedDayKeys[0])) : mondayOf(new Date()),
-  );
+  const [viewStart, setViewStart] = useState<Date>(() => startOfPeriod(new Date(), 7));
 
-  // If new search results arrive, hop the calendar back to the first week
-  // that contains any of them.
+  // If new search results arrive, hop the calendar back to the period that
+  // contains any of them.
   useEffect(() => {
     if (sortedDayKeys.length > 0) {
-      setWeekStart(mondayOf(parseDayKey(sortedDayKeys[0])));
+      setViewStart(startOfPeriod(parseDayKey(sortedDayKeys[0]), viewDays));
     }
-  }, [sortedDayKeys]);
+  }, [sortedDayKeys, viewDays]);
 
-  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  // When the viewDays changes (toggle clicked or screen resize), re-anchor
+  // viewStart so the visible range still includes "today" if we were on it.
+  useEffect(() => {
+    setViewStart((prev) => startOfPeriod(prev, viewDays));
+  }, [viewDays]);
 
-  // Auto-fit time axis to this week's data, with sane defaults when empty.
-  const visibleIntervals = weekDays.flatMap((d) => intervalsByDay.get(toDayKey(d)) ?? []);
+  const visibleDays = Array.from({ length: viewDays }, (_, i) => addDays(viewStart, i));
+
+  // Auto-fit time axis to this view's data, with sane defaults when empty.
+  const visibleIntervals = visibleDays.flatMap((d) => intervalsByDay.get(toDayKey(d)) ?? []);
   const minHour = visibleIntervals.length
     ? Math.max(0, Math.min(...visibleIntervals.map((i) => i.start.getHours())))
     : DEFAULT_MIN_HOUR;
@@ -64,66 +93,100 @@ export function SlotsCalendar({
     : DEFAULT_MAX_HOUR;
   const hours = Array.from({ length: maxHour - minHour }, (_, i) => minHour + i);
 
-  const totalSlotsThisWeek = visibleIntervals.length;
+  const totalSlotsThisView = visibleIntervals.length;
 
-  function nudgeWeek(delta: -1 | 1) {
-    setWeekStart((w) => addDays(w, 7 * delta));
+  function nudge(delta: -1 | 1) {
+    setViewStart((s) => addDays(s, viewDays * delta));
   }
 
-  const isCurrentWeek = sameDay(weekStart, mondayOf(new Date()));
-  const weekEnd = addDays(weekStart, 6);
-  const isoWk = isoWeekNumber(weekStart);
-  const rangeLabel = formatWeekRange(weekStart, weekEnd);
+  const isToday = sameDay(viewStart, startOfPeriod(new Date(), viewDays));
+  const viewEnd = addDays(viewStart, viewDays - 1);
+  const rangeLabel = formatRange(viewStart, viewEnd, viewDays);
+  const isoWk = isoWeekNumber(viewStart);
 
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <section className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       {/* navigation */}
-      <header className="flex items-center justify-between gap-3 border-b border-zinc-100 px-4 py-3 dark:border-zinc-800">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-3 py-3 dark:border-zinc-800 sm:px-4">
         <div className="flex items-center gap-1.5">
           <button
             type="button"
-            onClick={() => nudgeWeek(-1)}
-            aria-label="Previous week"
+            onClick={() => nudge(-1)}
+            aria-label={viewDays === 1 ? "Previous day" : viewDays === 3 ? "Previous 3 days" : "Previous week"}
             className="rounded-md border border-zinc-200 px-2.5 py-1 text-sm leading-none hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
             ‹
           </button>
           <button
             type="button"
-            onClick={() => setWeekStart(mondayOf(new Date()))}
-            disabled={isCurrentWeek}
+            onClick={() => setViewStart(startOfPeriod(new Date(), viewDays))}
+            disabled={isToday}
             className="rounded-md border border-zinc-200 px-2.5 py-1 text-xs font-medium hover:bg-zinc-50 disabled:opacity-40 disabled:hover:bg-transparent dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
             Today
           </button>
           <button
             type="button"
-            onClick={() => nudgeWeek(1)}
-            aria-label="Next week"
+            onClick={() => nudge(1)}
+            aria-label={viewDays === 1 ? "Next day" : viewDays === 3 ? "Next 3 days" : "Next week"}
             className="rounded-md border border-zinc-200 px-2.5 py-1 text-sm leading-none hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
           >
             ›
           </button>
         </div>
-        <h3 className="min-w-0 truncate text-right text-sm font-medium text-zinc-900 dark:text-zinc-50">
-          Week {isoWk}
-          <span className="text-zinc-400"> · </span>
+
+        {/* View toggle */}
+        <div className="flex rounded-md border border-zinc-200 dark:border-zinc-700">
+          {([1, 3, 7] as ViewDays[]).map((v, i) => {
+            const active = v === viewDays;
+            return (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setViewDays(v)}
+                className={
+                  "px-2 py-1 text-xs font-medium transition-colors " +
+                  (i === 0 ? "rounded-l-md " : "") +
+                  (i === 2 ? "rounded-r-md " : "") +
+                  (i !== 0 ? "border-l border-zinc-200 dark:border-zinc-700 " : "") +
+                  (active
+                    ? "bg-indigo-600 text-white dark:bg-indigo-500"
+                    : "text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800")
+                }
+                aria-pressed={active}
+              >
+                {VIEW_LABEL[v]}
+              </button>
+            );
+          })}
+        </div>
+
+        <h3 className="min-w-0 basis-full truncate text-sm font-medium text-zinc-900 dark:text-zinc-50 sm:basis-auto sm:text-right">
+          {viewDays === 7 && (
+            <>
+              Week {isoWk}
+              <span className="text-zinc-400"> · </span>
+            </>
+          )}
           <span className="font-normal text-zinc-600 dark:text-zinc-400">{rangeLabel}</span>
-          {totalSlotsThisWeek === 0 && (
+          {totalSlotsThisView === 0 && (
             <span className="ml-2 text-xs text-zinc-500">no slots</span>
           )}
         </h3>
       </header>
 
       {/* day headers */}
-      <div className="grid grid-cols-[56px_repeat(7,1fr)] border-b border-zinc-100 dark:border-zinc-800">
+      <div
+        className="grid border-b border-zinc-100 dark:border-zinc-800"
+        style={{ gridTemplateColumns: `48px repeat(${viewDays}, minmax(0, 1fr))` }}
+      >
         <div />
-        {weekDays.map((day) => {
-          const isToday = sameDay(day, new Date());
+        {visibleDays.map((day) => {
+          const isCurrent = sameDay(day, new Date());
           const holidayName = holidays?.get(toDayKey(day));
           const bg = holidayName
             ? "bg-amber-50 dark:bg-amber-950/30"
-            : isToday
+            : isCurrent
               ? "bg-zinc-50 dark:bg-zinc-800/30"
               : "";
           return (
@@ -138,7 +201,7 @@ export function SlotsCalendar({
               <div
                 className={
                   "text-sm " +
-                  (isToday
+                  (isCurrent
                     ? "font-bold text-zinc-900 dark:text-zinc-50"
                     : "text-zinc-700 dark:text-zinc-300")
                 }
@@ -156,7 +219,10 @@ export function SlotsCalendar({
       </div>
 
       {/* time grid */}
-      <div className="grid grid-cols-[56px_repeat(7,1fr)]">
+      <div
+        className="grid"
+        style={{ gridTemplateColumns: `48px repeat(${viewDays}, minmax(0, 1fr))` }}
+      >
         {/* time axis */}
         <div>
           {hours.map((h) => (
@@ -171,7 +237,7 @@ export function SlotsCalendar({
         </div>
 
         {/* day columns */}
-        {weekDays.map((day) => {
+        {visibleDays.map((day) => {
           const intervals = intervalsByDay.get(toDayKey(day)) ?? [];
           const isHoliday = holidays?.has(toDayKey(day)) ?? false;
           return (
@@ -233,7 +299,6 @@ function groupAndMerge(slots: Slot[]): Map<string, FreeInterval[]> {
   const byDay = new Map<string, FreeInterval[]>();
   if (slots.length === 0) return byDay;
 
-  // Sort by absolute start so we can merge in one pass per day.
   const sorted = [...slots]
     .map((s) => ({ start: new Date(s.start), end: new Date(s.end) }))
     .sort((a, b) => a.start.getTime() - b.start.getTime());
@@ -253,6 +318,17 @@ function groupAndMerge(slots: Slot[]): Map<string, FreeInterval[]> {
   }
 
   return byDay;
+}
+
+/** Anchor a date to the start of its current view window:
+ *  - 7-day → Monday of the week
+ *  - 3-day → keep the day as-is (3-day window starts on the given day)
+ *  - 1-day → keep the day as-is */
+function startOfPeriod(d: Date, viewDays: ViewDays): Date {
+  if (viewDays === 7) return mondayOf(d);
+  const out = new Date(d);
+  out.setHours(0, 0, 0, 0);
+  return out;
 }
 
 function mondayOf(d: Date): Date {
@@ -300,28 +376,34 @@ function formatHM(d: Date): string {
 function isoWeekNumber(d: Date): number {
   const target = new Date(d.valueOf());
   target.setHours(0, 0, 0, 0);
-  // Move target to Thursday of the same ISO week.
-  const dayOfWeek = (target.getDay() + 6) % 7; // 0 = Mon
+  const dayOfWeek = (target.getDay() + 6) % 7;
   target.setDate(target.getDate() - dayOfWeek + 3);
   const firstThursday = new Date(target.getFullYear(), 0, 4);
   const diffDays = (target.getTime() - firstThursday.getTime()) / 86_400_000;
   return 1 + Math.floor(diffDays / 7);
 }
 
-function formatWeekRange(start: Date, end: Date): string {
-  const sameYear = start.getFullYear() === end.getFullYear();
-  const sameMonth = sameYear && start.getMonth() === end.getMonth();
+function formatRange(start: Date, end: Date, viewDays: ViewDays): string {
   const day = (d: Date) => d.getDate();
   const monthShort = (d: Date) => d.toLocaleDateString(undefined, { month: "short" });
   const year = (d: Date) => d.getFullYear();
+
+  if (viewDays === 1) {
+    return start.toLocaleDateString(undefined, {
+      weekday: "long",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  }
+
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const sameMonth = sameYear && start.getMonth() === end.getMonth();
   if (sameMonth) {
-    // "5–11 May 2026"
     return `${day(start)}–${day(end)} ${monthShort(end)} ${year(end)}`;
   }
   if (sameYear) {
-    // "29 Apr – 5 May 2026"
     return `${day(start)} ${monthShort(start)} – ${day(end)} ${monthShort(end)} ${year(end)}`;
   }
-  // "29 Dec 2025 – 4 Jan 2026"
   return `${day(start)} ${monthShort(start)} ${year(start)} – ${day(end)} ${monthShort(end)} ${year(end)}`;
 }
