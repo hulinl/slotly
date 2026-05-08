@@ -74,12 +74,13 @@ export default function AccountSettingsPage() {
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <AuthedHeader email={email} />
       <main className="mx-auto max-w-2xl space-y-6 px-6 py-10">
-        <SettingsNav />
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Account
           </h1>
         </div>
+
+        <SettingsNav />
 
         <section className="rounded-xl border border-red-200 bg-red-50/40 p-6 dark:border-red-900 dark:bg-red-950/20">
           <h2 className="text-base font-semibold text-red-900 dark:text-red-200">

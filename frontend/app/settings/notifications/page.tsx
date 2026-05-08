@@ -86,7 +86,6 @@ export default function NotificationPrefsPage() {
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <AuthedHeader email={email} />
       <main className="mx-auto max-w-2xl space-y-6 px-6 py-10">
-        <SettingsNav />
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Notification preferences
@@ -95,6 +94,8 @@ export default function NotificationPrefsPage() {
             Toggle which channels deliver each kind of event.
           </p>
         </div>
+
+        <SettingsNav />
 
         <FormSuccess message={success} />
 

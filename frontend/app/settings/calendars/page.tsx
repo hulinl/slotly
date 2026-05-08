@@ -96,7 +96,6 @@ export default function CalendarsPage() {
       <AuthedHeader email={email} />
 
       <main className="mx-auto max-w-2xl space-y-6 px-6 py-10">
-        <SettingsNav />
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Calendar subscriptions
@@ -106,6 +105,8 @@ export default function CalendarsPage() {
             Polling cadence: every 5 minutes.
           </p>
         </div>
+
+        <SettingsNav />
 
         <AddCalendarForm
           onAdded={(cal) => setCalendars((prev) => [cal, ...prev.filter((c) => c.id !== cal.id)])}
