@@ -122,6 +122,147 @@ class MyAvailabilityView(APIView):
         })
 
 
+class PeerAvailabilityView(APIView):
+    """
+    POST /api/me/peer-availability/<user_id>
+        body: { from?, to?, duration_min, buffer_min? }
+
+    Compute the intersection of the authenticated caller's free time and
+    the target user's free time over the requested window. Mirrors the
+    main SearchView but takes one peer instead of a team.
+
+    Authorization: caller may peer-search anyone they share a team with,
+    or anyone whose share_enabled=True (effectively anyone publicly
+    bookable). Self-peer is allowed but pointless.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: Request, user_id: int) -> Response:
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo as _ZoneInfo
+        from django.conf import settings as _settings
+        from django.db.models import Q as _Q
+
+        from apps.search.engine import compute_slots as _compute_slots
+        from apps.teams.models import Membership as _Membership, Team as _Team
+
+        peer = get_object_or_404(User, pk=user_id)
+        if peer.pk == request.user.pk:
+            return Response({"detail": "Pick a peer other than yourself."}, status=400)
+
+        shared = _Team.objects.filter(memberships__user=request.user).filter(
+            memberships__user=peer,
+        ).exists()
+        if not shared and not peer.share_enabled:
+            return Response(
+                {"detail": "You don't share a team with this user and their profile isn't public."},
+                status=403,
+            )
+
+        body = request.data or {}
+        try:
+            duration_min = int(body.get("duration_min", 30))
+        except (TypeError, ValueError):
+            return Response({"detail": "duration_min must be an integer."}, status=400)
+        if duration_min < 5 or duration_min > 8 * 60:
+            return Response({"detail": "duration_min out of range (5..480)."}, status=400)
+        try:
+            buffer_min = int(body.get("buffer_min", 0))
+        except (TypeError, ValueError):
+            return Response({"detail": "buffer_min must be an integer."}, status=400)
+
+        now = timezone.now()
+        try:
+            window_start = (
+                _parse_iso_datetime(body.get("from"))
+                if body.get("from")
+                else now.replace(hour=0, minute=0, second=0, microsecond=0)
+            )
+            window_end = (
+                _parse_iso_datetime(body.get("to"))
+                if body.get("to")
+                else window_start + timedelta(days=56)
+            )
+        except ValueError:
+            return Response(
+                {"detail": "Invalid date format; expected ISO 8601 or YYYY-MM-DD."},
+                status=400,
+            )
+        if window_end <= window_start:
+            return Response({"detail": "to must be after from."}, status=400)
+        if (window_end - window_start) > timedelta(days=84):
+            window_end = window_start + timedelta(days=84)
+
+        user_ids = [request.user.pk, peer.pk]
+        working_hours_per_user = {
+            request.user.pk: request.user.working_hours,
+            peer.pk: peer.working_hours,
+        }
+
+        events = CalendarEvent.objects.filter(
+            _Q(transp=CalendarEvent.Transparency.OPAQUE) | _Q(is_all_day=True),
+            calendar__owner_id__in=user_ids,
+            calendar__include_in_busy=True,
+            dtstart__lt=window_end,
+            dtend__gt=window_start,
+        ).exclude(
+            status=CalendarEvent.Status.CANCELLED,
+        ).values("calendar__owner_id", "dtstart", "dtend")
+
+        busy_per_user: dict[int, list[tuple]] = {uid: [] for uid in user_ids}
+        for ev in events:
+            busy_per_user[ev["calendar__owner_id"]].append((ev["dtstart"], ev["dtend"]))
+        for u in Unavailability.objects.filter(
+            user_id__in=user_ids,
+            starts_at__lt=window_end,
+            ends_at__gt=window_start,
+        ).values("user_id", "starts_at", "ends_at"):
+            busy_per_user[u["user_id"]].append((u["starts_at"], u["ends_at"]))
+
+        slots, truncated = _compute_slots(
+            working_hours_per_user=working_hours_per_user,
+            busy_per_user=busy_per_user,
+            user_ids=user_ids,
+            window_start=window_start,
+            window_end=window_end,
+            duration=timedelta(minutes=duration_min),
+            buffer=timedelta(minutes=buffer_min),
+            tz=_ZoneInfo(_settings.TIME_ZONE),
+            max_results=200,
+        )
+
+        return Response({
+            "peer": PublicProfileSerializer(peer, context={"request": request}).data,
+            "window": {
+                "start": window_start.isoformat(),
+                "end": window_end.isoformat(),
+            },
+            "slots": [
+                {"start": s.start.isoformat(), "end": s.end.isoformat()}
+                for s in slots
+            ],
+            "count": len(slots),
+            "truncated": truncated,
+            "holidays": _holidays_in_range(
+                request.user.country, window_start.date(), window_end.date(),
+            ),
+        })
+
+
+def _parse_iso_datetime(value: str):
+    """Accept ISO 8601 datetimes OR YYYY-MM-DD (treated as midnight in app TZ)."""
+    from datetime import datetime
+    from django.conf import settings as dj_settings
+    from zoneinfo import ZoneInfo
+    s = value.strip()
+    if len(s) == 10 and s.count("-") == 2:
+        naive = datetime.strptime(s, "%Y-%m-%d")
+        return naive.replace(tzinfo=ZoneInfo(dj_settings.TIME_ZONE))
+    # Python 3.11+ tolerates trailing Z
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
 class PublicProfileView(APIView):
     """
     GET /api/public/profile/<token>?from=YYYY-MM-DD&to=YYYY-MM-DD

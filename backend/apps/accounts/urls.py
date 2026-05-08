@@ -5,6 +5,7 @@ from .views import (
     DeleteMeView,
     MeView,
     MyAvailabilityView,
+    PeerAvailabilityView,
     PublicProfileView,
     RegenerateShareTokenView,
     TeammateView,
@@ -17,6 +18,7 @@ urlpatterns = [
     # the frontend dev server.
     path("me", MeView.as_view(), name="me"),
     path("me/availability", MyAvailabilityView.as_view(), name="me-availability"),
+    path("me/peer-availability/<int:user_id>", PeerAvailabilityView.as_view(), name="me-peer-availability"),
     path("me/share/regenerate", RegenerateShareTokenView.as_view(), name="me-share-regenerate"),
     path("me/delete", DeleteMeView.as_view(), name="me-delete"),
     path("users", TeammatesIndexView.as_view(), name="teammate-index"),

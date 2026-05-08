@@ -100,6 +100,45 @@ export function computeFreeSlots(
   return out.map((f) => ({ start: f.start.toISOString(), end: f.end.toISOString() }));
 }
 
+// ---------------------------------------------------------------------------
+// Peer availability — /api/me/peer-availability/<id>
+// ---------------------------------------------------------------------------
+
+export type PeerAvailabilityResponse = {
+  peer: PublicProfile;
+  window: { start: string; end: string };
+  slots: { start: string; end: string }[];
+  count: number;
+  truncated: boolean;
+  holidays: { date: string; name: string }[];
+};
+
+export async function getPeerAvailability(
+  userId: number,
+  opts: { from?: string; to?: string; durationMin: number; bufferMin?: number },
+): Promise<PeerAvailabilityResponse> {
+  const csrf = (() => {
+    if (typeof document === "undefined") return undefined;
+    const m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
+    return m ? decodeURIComponent(m[1]) : undefined;
+  })();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (csrf) headers["X-CSRFToken"] = csrf;
+  const res = await fetch(`/api/me/peer-availability/${userId}`, {
+    method: "POST",
+    credentials: "include",
+    headers,
+    body: JSON.stringify({
+      from: opts.from,
+      to: opts.to,
+      duration_min: opts.durationMin,
+      buffer_min: opts.bufferMin ?? 0,
+    }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 /** Reduce a per-weekday WorkingHours object to [minStartHour, maxEndHour]
  * across the days that are marked available. Returns undefined when there
  * are no available days. Used to anchor the SlotsCalendar time axis so it

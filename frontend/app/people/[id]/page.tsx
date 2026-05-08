@@ -18,9 +18,9 @@ import {
   type Unavailability,
 } from "@/lib/availability";
 import { WEEKDAYS, type Weekday } from "@/lib/me";
-import { workingHoursRangeFromHours } from "@/lib/public-profile";
+import { getPeerAvailability, workingHoursRangeFromHours } from "@/lib/public-profile";
 import { fetchHolidaysForRange } from "@/lib/holidays";
-import { searchSlots, type Slot } from "@/lib/search";
+import type { Slot } from "@/lib/search";
 import { getTeammate, UsersApiError, type Teammate } from "@/lib/users";
 
 const DAY_LABEL: Record<Weekday, string> = {
@@ -85,24 +85,25 @@ export default function TeammateProfilePage() {
     })().catch(() => router.replace("/auth/login"));
   }, [userId, router]);
 
-  // Once we have the teammate, fetch 8 weeks of free slots in any shared
-  // team. The SlotsCalendar's week navigation needs ≥ 2 weeks of data to
-  // be useful — 14 days was too short.
+  // Once we have the teammate, fetch 8 weeks of slots that work for *both*
+  // of us — the intersection of caller + target free time within their
+  // joint working hours. For self-view (isMe), skip; the calendar there is
+  // about the caller's own free time and lives on /profile.
   useEffect(() => {
-    if (!user || user.shared_team_ids.length === 0) return;
+    if (!user) return;
+    if (isMe) {
+      setSlots([]);
+      return;
+    }
     setSearching(true);
     setSearchError(null);
-    const teamId = user.shared_team_ids[0];
     const now = new Date();
     const end = new Date();
     end.setDate(end.getDate() + 56);
-    searchSlots({
-      team_id: teamId,
-      member_ids: [user.id],
-      duration_min: 60,
-      limit: 2000,
-      window_start: now.toISOString(),
-      window_end: end.toISOString(),
+    getPeerAvailability(user.id, {
+      from: now.toISOString(),
+      to: end.toISOString(),
+      durationMin: 60,
     })
       .then((r) => setSlots(r.slots))
       .catch((err) =>
@@ -110,12 +111,12 @@ export default function TeammateProfilePage() {
       )
       .finally(() => setSearching(false));
 
-    // Fetch public holidays for the visible range, in the *teammate's* country
-    // (since this view is about their schedule, not the viewer's locale).
+    // Holidays for the visible range, in the teammate's country (since the
+    // page is mostly about their schedule).
     fetchHolidaysForRange(now.toISOString(), end.toISOString(), user.country)
       .then(setHolidays)
       .catch(() => setHolidays(new Map()));
-  }, [user]);
+  }, [user, isMe]);
 
   if (!meEmail) {
     return (
@@ -207,18 +208,15 @@ export default function TeammateProfilePage() {
           rows={unavailabilities}
           onChanged={async () => {
             await refreshUnavailabilities();
-            // also re-run availability search since the busy set changed
-            if (user?.shared_team_ids.length) {
-              const teamId = user.shared_team_ids[0];
+            // also re-run availability since the busy set changed
+            if (user && !isMe) {
               const now = new Date();
               const end = new Date();
               end.setDate(end.getDate() + 56);
-              searchSlots({
-                team_id: teamId,
-                member_ids: [user.id],
-                duration_min: 60,
-                window_start: now.toISOString(),
-                window_end: end.toISOString(),
+              getPeerAvailability(user.id, {
+                from: now.toISOString(),
+                to: end.toISOString(),
+                durationMin: 60,
               })
                 .then((r) => setSlots(r.slots))
                 .catch(() => {});
@@ -226,39 +224,43 @@ export default function TeammateProfilePage() {
           }}
         />
 
-        {/* availability — next 14 days */}
-        <section className="space-y-3">
-          <header className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              When {user.first_name || "they"} {user.first_name ? "is" : "are"} free
-            </h2>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">Next 8 weeks · 60-min slots · use ‹ › to navigate</p>
-          </header>
-          {searchError && <FormError message={searchError} />}
-          {searching && !slots ? (
-            <CardSkeleton rows={6} />
-          ) : slots && slots.length > 0 ? (
-            <SlotsCalendar
-              slots={slots}
-              durationMin={60}
-              holidays={holidays}
-              workingHoursRange={user ? workingHoursRangeFromHours(user.working_hours) : undefined}
-            />
-          ) : (
-            <section className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
-              {user.shared_team_ids.length === 0
-                ? "You don't share a team with this user, so we can't compute availability."
-                : "No 1-hour slots in their working hours over the next 8 weeks."}
-            </section>
-          )}
-          <div className="flex justify-end">
-            <Link href="/search">
-              <Button variant="secondary" className="sm:w-auto sm:px-4">
-                Open full search
-              </Button>
-            </Link>
-          </div>
-        </section>
+        {/* shared availability — intersection of caller + target */}
+        {!isMe && (
+          <section className="space-y-3">
+            <header className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+                {user.first_name
+                  ? `Times that work for you and ${user.first_name}`
+                  : "Times that work for both of you"}
+              </h2>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Next 8 weeks · 60-min slots · use ‹ › to navigate
+              </p>
+            </header>
+            {searchError && <FormError message={searchError} />}
+            {searching && !slots ? (
+              <CardSkeleton rows={6} />
+            ) : slots && slots.length > 0 ? (
+              <SlotsCalendar
+                slots={slots}
+                durationMin={60}
+                holidays={holidays}
+                workingHoursRange={user ? workingHoursRangeFromHours(user.working_hours) : undefined}
+              />
+            ) : (
+              <section className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
+                No 1-hour slot when both of you are free over the next 8 weeks.
+              </section>
+            )}
+            <div className="flex justify-end">
+              <Link href="/search">
+                <Button variant="secondary" className="sm:w-auto sm:px-4">
+                  Open full search
+                </Button>
+              </Link>
+            </div>
+          </section>
+        )}
       </main>
     </div>
   );
