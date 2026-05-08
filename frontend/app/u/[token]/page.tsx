@@ -134,16 +134,6 @@ export default function PublicProfilePage() {
             workingHoursRange={workingHoursRangeFromHours(data.profile.working_hours)}
           />
         )}
-
-        <p className="mt-6 text-center text-xs text-zinc-500 dark:text-zinc-500">
-          Powered by{" "}
-          <a
-            href="https://slotly.team"
-            className="font-medium text-indigo-600 hover:underline dark:text-indigo-400"
-          >
-            Slotly
-          </a>
-        </p>
       </section>
     </main>
   );

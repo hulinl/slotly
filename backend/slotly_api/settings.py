@@ -187,6 +187,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "calendars.sync_all_due",
         "schedule": 300.0,  # seconds
     },
+    # Daily archive purge: drop Unavailability blocks whose ends_at is
+    # >90 days in the past (per UX decision — the user already moved on).
+    "availability-purge-old-blocks": {
+        "task": "availability.purge_old_blocks",
+        "schedule": 86400.0,  # 24h
+    },
 }
 
 CACHES = {
