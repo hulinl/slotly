@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Bell, Building2, CalendarDays, ChevronRight, ExternalLink, RefreshCw, UserCog, type LucideIcon } from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
+import { BackButton } from "@/components/BackButton";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
 import { getSession } from "@/lib/auth";
@@ -67,6 +68,7 @@ export default function SettingsPage() {
       <AuthedHeader email={me.email} />
 
       <main className="mx-auto max-w-2xl space-y-8 px-6 py-10">
+        <BackButton fallback="/profile" />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Settings</h1>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Update your profile and weekly availability.</p>

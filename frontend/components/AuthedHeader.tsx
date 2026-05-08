@@ -43,6 +43,12 @@ const NAV: Array<{ href: string; label: string; icon: LucideIcon; matches: (path
     icon: Building2,
     matches: (p) => p.startsWith("/settings/teams"),
   },
+  {
+    href: "/settings",
+    label: "Settings",
+    icon: Settings,
+    matches: (p) => p === "/settings" || (p.startsWith("/settings/") && !p.startsWith("/settings/teams")),
+  },
 ];
 
 export function AuthedHeader({ email }: { email: string }) {

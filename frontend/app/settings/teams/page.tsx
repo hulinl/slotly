@@ -55,9 +55,6 @@ export default function TeamsListPage() {
 
       <main className="mx-auto max-w-2xl space-y-8 px-6 py-10">
         <div className="space-y-1">
-          <p className="text-xs uppercase tracking-wide text-zinc-500">
-            <Link href="/settings" className="underline">Settings</Link> / Teams
-          </p>
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Teams</h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
             Group people together so you can search for shared availability across the whole group at once.
