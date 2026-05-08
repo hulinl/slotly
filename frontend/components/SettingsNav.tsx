@@ -16,7 +16,6 @@ import {
   Bell,
   CalendarDays,
   Clock,
-  Globe,
   UserCircle,
   UserCog,
   type LucideIcon,
@@ -32,9 +31,8 @@ type SettingsTab = {
 };
 
 const TABS: SettingsTab[] = [
-  { href: "/settings#profile", label: "Profile", icon: UserCircle, activePath: "/settings" },
-  { href: "/settings#sharing", label: "Sharing", icon: Globe, activePath: "/settings" },
-  { href: "/settings#working-hours", label: "Working hours", icon: Clock, activePath: "/settings" },
+  { href: "/settings", label: "Profile", icon: UserCircle, activePath: "/settings" },
+  { href: "/settings/working-hours", label: "Working hours", icon: Clock, activePath: "/settings/working-hours" },
   { href: "/settings/calendars", label: "Calendars", icon: CalendarDays, activePath: "/settings/calendars" },
   { href: "/settings/notifications", label: "Notifications", icon: Bell, activePath: "/settings/notifications" },
   { href: "/settings/account", label: "Account", icon: UserCog, activePath: "/settings/account" },
@@ -47,9 +45,7 @@ export function SettingsNav() {
       <ul className="flex min-w-max items-center gap-1 py-2">
         {TABS.map((t) => {
           const Icon = t.icon;
-          const active =
-            t.activePath === pathname ||
-            (t.activePath && t.activePath !== "/settings" && pathname.startsWith(t.activePath));
+          const active = t.activePath === pathname;
           return (
             <li key={t.href}>
               <Link

@@ -21,16 +21,15 @@ export function Footer() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/bifactory-logo.png"
-            alt="BIfactory"
+            alt="BIfactory s.r.o."
             className="h-6 w-6 dark:hidden"
           />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/bifactory-logo-white.png"
-            alt="BIfactory"
+            alt="BIfactory s.r.o."
             className="hidden h-6 w-6 dark:block"
           />
-          <span>BIfactory s.r.o.</span>
         </Link>
       </div>
     </footer>
