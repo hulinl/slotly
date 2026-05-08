@@ -8,7 +8,7 @@ import { AuthedHeader } from "@/components/AuthedHeader";
 import { BackButton } from "@/components/BackButton";
 import { SettingsNav } from "@/components/SettingsNav";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
-import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
+import { Button, FormError, FormSuccess, Input, Label, Select } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import {
   getMe,
@@ -153,18 +153,17 @@ function ProfileCard({ me, onSaved }: { me: Me; onSaved: (m: Me) => void }) {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="country">Country</Label>
-          <select
+          <Select
             id="country"
             value={country}
             onChange={(e) => setCountry(e.target.value)}
-            className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
           >
             {SUPPORTED_COUNTRIES.map((c) => (
               <option key={c.code} value={c.code}>
                 {c.name}
               </option>
             ))}
-          </select>
+          </Select>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
             Drives public-holiday markers in the calendar grid.
           </p>

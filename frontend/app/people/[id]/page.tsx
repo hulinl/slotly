@@ -164,26 +164,6 @@ export default function TeammateProfilePage() {
           </div>
         </section>
 
-        {/* working hours */}
-        <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-3 text-base font-semibold text-zinc-900 dark:text-zinc-50">
-            Working hours
-          </h2>
-          <ul className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-            {WEEKDAYS.map((day) => {
-              const row = user.working_hours[day];
-              return (
-                <li key={day} className="flex items-center justify-between border-b border-zinc-100 py-1.5 last:border-b-0 dark:border-zinc-800">
-                  <span className="font-medium text-zinc-700 dark:text-zinc-300">{DAY_LABEL[day]}</span>
-                  <span className="text-zinc-600 dark:text-zinc-400">
-                    {row.available ? `${row.start} – ${row.end}` : <em className="text-zinc-400">unavailable</em>}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-
         {/* shared availability — intersection of caller + target */}
         {!isMe && (
           <section className="space-y-3">
@@ -221,6 +201,26 @@ export default function TeammateProfilePage() {
             </div>
           </section>
         )}
+
+        {/* working hours — context after the calendar */}
+        <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="mb-3 text-base font-semibold text-zinc-900 dark:text-zinc-50">
+            Working hours
+          </h2>
+          <ul className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+            {WEEKDAYS.map((day) => {
+              const row = user.working_hours[day];
+              return (
+                <li key={day} className="flex items-center justify-between border-b border-zinc-100 py-1.5 last:border-b-0 dark:border-zinc-800">
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300">{DAY_LABEL[day]}</span>
+                  <span className="text-zinc-600 dark:text-zinc-400">
+                    {row.available ? `${row.start} – ${row.end}` : <em className="text-zinc-400">unavailable</em>}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       </main>
     </div>
   );

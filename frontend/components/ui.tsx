@@ -3,7 +3,8 @@
  */
 "use client";
 
-import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
+import { type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from "react";
 
 type ButtonVariant = "primary" | "secondary";
 
@@ -32,6 +33,34 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
         (props.className ?? "")
       }
     />
+  );
+}
+
+/** Native <select> wrapped with a custom chevron so the dropdown indicator
+ * sits at right-3 (with breathing room from the border) instead of being
+ * jammed against the edge by the browser's default rendering. */
+export function Select({
+  className = "",
+  children,
+  ...rest
+}: SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <div className="relative">
+      <select
+        {...rest}
+        className={
+          "h-10 w-full appearance-none rounded-md border border-zinc-200 bg-white pl-3 pr-9 text-sm dark:border-zinc-800 dark:bg-zinc-950 " +
+          className
+        }
+      >
+        {children}
+      </select>
+      <ChevronDown
+        size={16}
+        aria-hidden
+        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 dark:text-zinc-400"
+      />
+    </div>
   );
 }
 

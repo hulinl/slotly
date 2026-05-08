@@ -56,16 +56,16 @@ export default function TeamsListPage() {
       <AuthedHeader email={email} />
 
       <main className="mx-auto max-w-2xl space-y-6 px-6 py-10">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Teams</h1>
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Group people together so you can search for shared availability across the whole group at once.
-            </p>
-          </div>
+        <div className="space-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Teams</h1>
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            Group people together so you can search for shared availability across the whole group at once.
+          </p>
+        </div>
+        <div className="flex justify-end">
           <Button
             onClick={() => setCreating(true)}
-            className="inline-flex items-center justify-center gap-2 sm:!w-auto sm:px-4"
+            className="inline-flex !w-auto items-center gap-2 px-4"
           >
             <Plus size={16} aria-hidden />
             <span>Create new team</span>

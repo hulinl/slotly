@@ -7,7 +7,7 @@ import { AuthedHeader } from "@/components/AuthedHeader";
 import { DatePicker } from "@/components/DatePicker";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { SlotsCalendar } from "@/components/SlotsCalendar";
-import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
+import { Button, FormError, FormSuccess, Input, Label, Select } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import { syncAllMyCalendars } from "@/lib/calendars";
 import { fetchHolidaysForRange } from "@/lib/holidays";
@@ -465,18 +465,17 @@ function SearchForm({
       >
         <div className="space-y-1.5">
           <Label htmlFor="team">Team</Label>
-          <select
+          <Select
             id="team"
             value={teamId}
             onChange={(e) => setTeamId(Number(e.target.value))}
-            className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
           >
             {teams.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div className="space-y-1.5">
@@ -533,33 +532,31 @@ function SearchForm({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="duration">Meeting duration (minutes)</Label>
-            <select
+            <Select
               id="duration"
               value={duration}
               onChange={(e) => setDuration(Number(e.target.value))}
-              className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
             >
               {DURATION_PRESETS.map((d) => (
                 <option key={d} value={d}>
                   {d < 60 ? `${d} min` : `${d / 60} h`}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="buffer">Buffer between meetings (minutes)</Label>
-            <select
+            <Select
               id="buffer"
               value={buffer}
               onChange={(e) => setBuffer(Number(e.target.value))}
-              className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
             >
               {[0, 5, 10, 15, 30].map((b) => (
                 <option key={b} value={b}>
                   {b === 0 ? "None" : `${b} min`}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="start">From</Label>
