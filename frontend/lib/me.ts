@@ -77,10 +77,48 @@ function csrfHeader(): Record<string, string> {
   return m ? { "X-CSRFToken": decodeURIComponent(m[1]) } : {};
 }
 
-export async function getMe(): Promise<Me> {
+// ---------------------------------------------------------------------------
+// /api/me cache: stale-while-revalidate.
+// First call fetches and populates. Subsequent calls return the cached value
+// instantly and trigger a background refetch — pages that poll on every
+// navigation render immediately instead of awaiting a round-trip.
+// Mutating helpers (patchMe, regenerateShareToken, uploadAvatar) and
+// auth-state changes (logout) refresh / clear the cache directly.
+// ---------------------------------------------------------------------------
+
+let _meCache: Me | null = null;
+let _meInflight: Promise<Me> | null = null;
+
+async function _fetchMe(): Promise<Me> {
   const res = await fetch("/api/me", { credentials: "include" });
   if (!res.ok) throw new MeApiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
+  const data = (await res.json()) as Me;
+  _meCache = data;
+  return data;
+}
+
+export async function getMe(): Promise<Me> {
+  if (_meCache) {
+    // Return immediately, refresh in the background. If a refetch is already
+    // in flight, don't kick a second one.
+    if (!_meInflight) {
+      _meInflight = _fetchMe()
+        .catch(() => _meCache!)
+        .finally(() => {
+          _meInflight = null;
+        });
+    }
+    return _meCache;
+  }
+  if (!_meInflight) _meInflight = _fetchMe().finally(() => { _meInflight = null; });
+  return _meInflight;
+}
+
+/** Drop the cached /api/me so the next getMe() forces a fresh fetch.
+ * Call after sign-out (or anything else that invalidates the user). */
+export function clearMeCache(): void {
+  _meCache = null;
+  _meInflight = null;
 }
 
 export async function patchMe(patch: MePatch): Promise<Me> {
@@ -92,6 +130,7 @@ export async function patchMe(patch: MePatch): Promise<Me> {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new MeApiError(res.status, body);
+  _meCache = body as Me;
   return body as Me;
 }
 
@@ -128,6 +167,7 @@ export async function regenerateShareToken(): Promise<Me> {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new MeApiError(res.status, body);
+  _meCache = body as Me;
   return body as Me;
 }
 
@@ -142,5 +182,6 @@ export async function uploadAvatar(file: File): Promise<Me> {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new MeApiError(res.status, body);
+  _meCache = body as Me;
   return body as Me;
 }

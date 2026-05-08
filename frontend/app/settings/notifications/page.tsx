@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
-import { BackButton } from "@/components/BackButton";
 import { SettingsNav } from "@/components/SettingsNav";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormSuccess } from "@/components/ui";
@@ -87,7 +86,6 @@ export default function NotificationPrefsPage() {
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <AuthedHeader email={email} />
       <main className="mx-auto max-w-2xl space-y-6 px-6 py-10">
-        <BackButton fallback="/settings" />
         <SettingsNav />
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">

@@ -9,7 +9,6 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
-import { BackButton } from "@/components/BackButton";
 import { SettingsNav } from "@/components/SettingsNav";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
@@ -61,7 +60,6 @@ export default function WorkingHoursSettingsPage() {
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <AuthedHeader email={me.email} />
       <main className="mx-auto max-w-2xl space-y-6 px-6 py-10">
-        <BackButton fallback="/settings" />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Working hours
