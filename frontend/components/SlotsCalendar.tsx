@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { Trash2 } from "lucide-react";
 import type { Slot } from "@/lib/search";
 
 const HOUR_PX = 48;          // pixel height of one hour row
@@ -319,30 +320,30 @@ export function SlotsCalendar({
                 return (
                   <div
                     key={`u-${b.id}-${day.toISOString()}`}
-                    className={
-                      "absolute inset-x-1 overflow-hidden rounded border border-amber-300 bg-amber-100 px-1 py-0.5 text-[11px] leading-tight text-amber-900 dark:border-amber-700/60 dark:bg-amber-900/40 dark:text-amber-100 " +
-                      (clickable
-                        ? "cursor-pointer transition-colors hover:bg-amber-200 dark:hover:bg-amber-900/60"
-                        : "")
-                    }
+                    className="absolute inset-x-1 overflow-hidden rounded border border-amber-300 bg-amber-100 px-1 py-0.5 text-[11px] leading-tight text-amber-900 dark:border-amber-700/60 dark:bg-amber-900/40 dark:text-amber-100"
                     style={{ top, height }}
-                    title={
-                      clickable
-                        ? `Click to delete "${b.label}"`
-                        : b.label
-                    }
-                    onClick={() => {
-                      if (!onDeleteUnavailability) return;
-                      if (!confirm(`Delete "${b.label}"?`)) return;
-                      void onDeleteUnavailability(b.id);
-                    }}
+                    title={b.label}
                   >
-                    <div className="font-medium">
+                    <div className="pr-5 font-medium">
                       {b.label}
                       {b.isAllDay && (
                         <span className="ml-1 text-[10px] opacity-70">all day</span>
                       )}
                     </div>
+                    {clickable && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!confirm(`Delete "${b.label}"?`)) return;
+                          void onDeleteUnavailability(b.id);
+                        }}
+                        aria-label={`Delete "${b.label}"`}
+                        className="absolute right-0.5 top-0.5 inline-flex h-5 w-5 items-center justify-center rounded text-amber-700 opacity-70 transition-opacity hover:bg-amber-200 hover:opacity-100 active:bg-amber-300 dark:text-amber-200 dark:hover:bg-amber-900/70"
+                      >
+                        <Trash2 size={12} aria-hidden />
+                      </button>
+                    )}
                   </div>
                 );
               })}

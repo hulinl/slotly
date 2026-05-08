@@ -9,7 +9,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { ExternalLink, Globe, Settings as SettingsIcon } from "lucide-react";
+import { CalendarOff, ExternalLink, Globe, Settings as SettingsIcon, Trash2 } from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { DatePicker } from "@/components/DatePicker";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
@@ -164,21 +164,21 @@ export default function ProfilePage() {
         </section>
 
         {/* Availability calendar with inline unavailability blocks */}
-        <section className="space-y-2">
-          <header className="flex items-center justify-between gap-2">
+        <section className="space-y-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
               Your availability — next 8 weeks
             </h2>
-            <Button
-              variant="secondary"
-              onClick={() => setAdding(true)}
-              className="!w-auto px-3"
-            >
-              + Add unavailability
-            </Button>
-          </header>
+          </div>
+          <Button
+            onClick={() => setAdding(true)}
+            className="inline-flex items-center justify-center gap-2 sm:!w-auto sm:px-4"
+          >
+            <CalendarOff size={16} aria-hidden />
+            <span>Add unavailability</span>
+          </Button>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
-            Green = free. Amber = blocks you marked unavailable (click to delete).
+            Green = free. Amber = blocks you marked unavailable (tap the trash icon to delete).
           </p>
           {slots.length === 0 ? (
             <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
@@ -202,6 +202,13 @@ export default function ProfilePage() {
             />
           )}
         </section>
+
+        {/* Full list of upcoming blocks — including ones outside the visible
+            calendar range so the user has the complete picture. */}
+        <UpcomingUnavailabilityList
+          rows={unavailabilities}
+          onDeleted={() => refreshUnavailabilities(meId)}
+        />
       </main>
 
       {adding && (
@@ -233,82 +240,60 @@ export default function ProfilePage() {
 }
 
 // ---------------------------------------------------------------------------
-// Unavailability inline (mirrored from /people/[id]; will refactor to a
-// shared component once both pages stabilise).
+// Upcoming unavailability — full list (including blocks far in the future
+// that aren't visible in the calendar's 8-week view) so the user always
+// has the complete picture.
 // ---------------------------------------------------------------------------
 
-function UnavailabilitySection({
+function UpcomingUnavailabilityList({
   rows,
-  onChanged,
+  onDeleted,
 }: {
   rows: Unavailability[] | null;
-  onChanged: () => void | Promise<void>;
+  onDeleted: () => void | Promise<void>;
 }) {
-  const [adding, setAdding] = useState(false);
-  const upcoming = (rows ?? []).filter((u) => new Date(u.ends_at) >= new Date());
+  const upcoming = (rows ?? [])
+    .filter((u) => new Date(u.ends_at) >= new Date())
+    .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+
+  if (upcoming.length === 0) return null;
 
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <header className="mb-3 flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-            Unavailability
-          </h2>
-          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            Block specific days when you&apos;ll be away — vacation, sick days,
-            offsites. These count as busy in searches and your public link.
-          </p>
-        </div>
-        {!adding && (
-          <Button onClick={() => setAdding(true)} variant="secondary" className="sm:w-auto sm:px-3">
-            Add block
-          </Button>
-        )}
-      </header>
-
-      {adding && (
-        <AddUnavailabilityForm
-          onCancel={() => setAdding(false)}
-          onSaved={async () => {
-            setAdding(false);
-            await onChanged();
-          }}
-        />
-      )}
-
-      {upcoming.length === 0 ? (
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          No upcoming blocks.
-        </p>
-      ) : (
-        <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {upcoming.map((u) => (
-            <li key={u.id} className="flex items-start gap-3 py-3">
-              <div className="flex-1">
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{u.label}</p>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                  {formatRange(u.starts_at, u.ends_at, u.is_all_day)}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!confirm(`Delete "${u.label}"?`)) return;
-                  try {
-                    await deleteUnavailability(u.id);
-                    await onChanged();
-                  } catch (err) {
-                    alert(err instanceof Error ? err.message : "Delete failed");
-                  }
-                }}
-                className="text-xs text-red-600 underline dark:text-red-300"
-              >
-                Remove
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+    <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <h2 className="mb-1 text-base font-semibold text-zinc-900 dark:text-zinc-50">
+        Upcoming unavailability
+      </h2>
+      <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+        All blocks you have planned, including ones outside the visible calendar.
+      </p>
+      <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+        {upcoming.map((u) => (
+          <li key={u.id} className="flex items-start gap-3 py-3">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{u.label}</p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                {formatRange(u.starts_at, u.ends_at, u.is_all_day)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!confirm(`Delete "${u.label}"?`)) return;
+                try {
+                  await deleteUnavailability(u.id);
+                  await onDeleted();
+                } catch (err) {
+                  alert(err instanceof Error ? err.message : "Delete failed");
+                }
+              }}
+              aria-label={`Delete "${u.label}"`}
+              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-red-600 transition-colors hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30"
+            >
+              <Trash2 size={14} aria-hidden />
+            </button>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -383,7 +368,20 @@ function AddUnavailabilityForm({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="block-start">From</Label>
-          <DatePicker id="block-start" value={startDate} onChange={setStartDate} />
+          <DatePicker
+            id="block-start"
+            value={startDate}
+            onChange={(v) => {
+              setStartDate(v);
+              // Snap end-date forward when the user pushes the start past it,
+              // and also follow when start equals end (so picking a future
+              // start automatically picks the same day end). Lets the user
+              // override afterwards.
+              if (!endDate || v > endDate || endDate === startDate) {
+                setEndDate(v);
+              }
+            }}
+          />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="block-end">Until (inclusive)</Label>
