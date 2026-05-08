@@ -74,6 +74,13 @@ export function SlotsCalendar({
     () => unavailabilityByDay(unavailabilityBlocks ?? []),
     [unavailabilityBlocks],
   );
+  // Re-compute "now" each minute so a calendar left open over time still
+  // hides slots that have just lapsed.
+  const [_now, setNow] = useState<Date>(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   // viewDays — start with desktop default during SSR; pick a sensible
   // default on mount based on real window width. After the user explicitly
@@ -286,7 +293,20 @@ export function SlotsCalendar({
 
         {/* day columns */}
         {visibleDays.map((day) => {
-          const intervals = intervalsByDay.get(toDayKey(day)) ?? [];
+          const rawIntervals = intervalsByDay.get(toDayKey(day)) ?? [];
+          // For today, intervals that have already ended are useless to
+          // show, and intervals that are mid-flight should start at "now"
+          // (so the visualisation matches reality, not the historical
+          // working-hours window). Other days render unchanged.
+          const intervals = sameDay(day, _now)
+            ? rawIntervals
+                .filter((iv) => iv.end.getTime() > _now.getTime())
+                .map((iv) =>
+                  iv.start.getTime() < _now.getTime()
+                    ? { start: _now, end: iv.end }
+                    : iv,
+                )
+            : rawIntervals;
           const isHoliday = holidays?.has(toDayKey(day)) ?? false;
           return (
             <div
