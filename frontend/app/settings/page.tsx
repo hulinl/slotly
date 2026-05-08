@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Bell, Building2, CalendarDays, ChevronRight, ExternalLink, RefreshCw, UserCog, type LucideIcon } from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { BackButton } from "@/components/BackButton";
@@ -36,7 +36,17 @@ const DAY_LABEL: Record<Weekday, string> = {
 type Status = "loading" | "ready" | "unauth";
 
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={<PageSkeleton><CardSkeleton rows={3} /></PageSkeleton>}>
+      <SettingsPageInner />
+    </Suspense>
+  );
+}
+
+function SettingsPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const cameFromProfile = searchParams.get("from") === "profile";
   const [status, setStatus] = useState<Status>("loading");
   const [me, setMe] = useState<Me | null>(null);
 
@@ -68,7 +78,7 @@ export default function SettingsPage() {
       <AuthedHeader email={me.email} />
 
       <main className="mx-auto max-w-2xl space-y-8 px-6 py-10">
-        <BackButton fallback="/profile" />
+        {cameFromProfile && <BackButton fallback="/profile" />}
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Settings</h1>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Update your profile and weekly availability.</p>

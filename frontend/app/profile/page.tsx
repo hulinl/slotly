@@ -133,7 +133,7 @@ export default function ProfilePage() {
             </div>
             <div className="flex items-center gap-2">
               <Link
-                href="/settings"
+                href="/settings?from=profile"
                 className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
               >
                 <SettingsIcon className="h-4 w-4" />
@@ -154,7 +154,7 @@ export default function ProfilePage() {
           </div>
           <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
             This is what people see on your public link. Toggle sharing in
-            <Link href="/settings" className="font-medium underline">
+            <Link href="/settings?from=profile" className="font-medium underline">
               {" "}
               Settings
             </Link>

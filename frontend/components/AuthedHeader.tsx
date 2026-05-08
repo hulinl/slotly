@@ -18,18 +18,16 @@ import { logout } from "@/lib/auth";
 import { Logo } from "./Logo";
 import { NotificationsBell } from "./NotificationsBell";
 
+// Top-level destinations. Profile is intentionally NOT here — the email
+// link in the top right already opens it, and side-by-side "Profile" +
+// "People" caused users to misread which is which. Profile gets a row
+// inside the mobile dropdown's account section instead.
 const NAV: Array<{ href: string; label: string; icon: LucideIcon; matches: (path: string) => boolean }> = [
   {
     href: "/search",
     label: "Find a slot",
     icon: Calendar,
     matches: (p) => p === "/search",
-  },
-  {
-    href: "/profile",
-    label: "Profile",
-    icon: User,
-    matches: (p) => p === "/profile",
   },
   {
     href: "/people",
@@ -180,18 +178,17 @@ export function AuthedHeader({ email }: { email: string }) {
             })}
             <div className="my-1 border-t border-zinc-100 dark:border-zinc-800" />
             <Link
-              href="/settings"
+              href="/profile"
               className={
                 "flex items-center gap-3 px-5 py-3 text-sm transition-colors " +
-                (pathname.startsWith("/settings") && !pathname.startsWith("/settings/teams")
+                (pathname === "/profile"
                   ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200"
                   : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-800/50")
               }
             >
-              <Settings size={16} aria-hidden />
-              <span>Settings</span>
+              <User size={16} aria-hidden />
+              <span>My profile</span>
             </Link>
-            <div className="my-1 border-t border-zinc-100 dark:border-zinc-800" />
             <div className="px-5 py-2 text-xs text-zinc-500 dark:text-zinc-400">
               Signed in as
             </div>
