@@ -6,6 +6,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { AlertTriangle, ChevronDown, ExternalLink, HelpCircle } from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { BackButton } from "@/components/BackButton";
+import { SettingsNav } from "@/components/SettingsNav";
 import { ProviderBadge } from "@/components/ProviderBadge";
 import { CardSkeleton, ListSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
@@ -97,6 +98,7 @@ export default function CalendarsPage() {
 
       <main className="mx-auto max-w-2xl space-y-6 px-6 py-10">
         <BackButton fallback="/settings" />
+        <SettingsNav />
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
             Calendar subscriptions

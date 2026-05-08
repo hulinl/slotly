@@ -249,13 +249,13 @@ export function SlotsCalendar({
         className="grid"
         style={{ gridTemplateColumns: `48px repeat(${viewDays}, minmax(0, 1fr))` }}
       >
-        {/* time axis */}
+        {/* time axis — gridlines live inside day columns, not here */}
         <div>
           {hours.map((h) => (
             <div
               key={h}
               style={{ height: HOUR_PX }}
-              className="relative border-t border-zinc-100 pr-2 text-right text-[10px] text-zinc-500 dark:border-zinc-800"
+              className="relative pr-2 text-right text-[10px] text-zinc-500"
             >
               <span className="absolute -top-1.5 right-2">{String(h).padStart(2, "0")}:00</span>
             </div>

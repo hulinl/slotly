@@ -6,6 +6,7 @@ import { Suspense, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Bell, Building2, CalendarDays, ChevronRight, ExternalLink, RefreshCw, UserCog, type LucideIcon } from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { BackButton } from "@/components/BackButton";
+import { SettingsNav } from "@/components/SettingsNav";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
 import { getSession } from "@/lib/auth";
@@ -77,25 +78,23 @@ function SettingsPageInner() {
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <AuthedHeader email={me.email} />
 
-      <main className="mx-auto max-w-2xl space-y-8 px-6 py-10">
+      <main className="mx-auto max-w-2xl space-y-6 px-6 py-10">
         {cameFromProfile && <BackButton fallback="/profile" />}
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Settings</h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Update your profile and weekly availability.</p>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Profile, sharing, and your weekly working hours.</p>
         </div>
 
-        <ProfileCard me={me} onSaved={setMe} />
-        <ShareCard me={me} onSaved={setMe} />
-        <WorkingHoursCard me={me} onSaved={setMe} />
+        <SettingsNav />
 
-        <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-          <h2 className="mb-3 text-base font-semibold text-zinc-900 dark:text-zinc-50">More</h2>
-          <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            <SettingsRow href="/settings/calendars" icon={CalendarDays} label="Calendar subscriptions" hint="Subscribe to ICS URLs you want Slotly to read" />
-            <SettingsRow href="/settings/teams" icon={Building2} label="Teams & invitations" hint="Create teams, invite people, accept invites" />
-            <SettingsRow href="/settings/notifications" icon={Bell} label="Notification preferences" hint="Choose which events email you and ring the bell" />
-            <SettingsRow href="/settings/account" icon={UserCog} label="Account & deletion" hint="Delete your account permanently" destructive />
-          </ul>
+        <section id="profile" className="scroll-mt-24">
+          <ProfileCard me={me} onSaved={setMe} />
+        </section>
+        <section id="sharing" className="scroll-mt-24">
+          <ShareCard me={me} onSaved={setMe} />
+        </section>
+        <section id="working-hours" className="scroll-mt-24">
+          <WorkingHoursCard me={me} onSaved={setMe} />
         </section>
       </main>
     </div>
