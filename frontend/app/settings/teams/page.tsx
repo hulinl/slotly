@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
+import { Plus } from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { CardSkeleton, ListSkeleton, PageSkeleton } from "@/components/Skeleton";
-import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
+import { Button, FormError, Input, Label } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import {
   acceptInvitation,
@@ -23,6 +24,7 @@ export default function TeamsListPage() {
   const [loaded, setLoaded] = useState(false);
   const [email, setEmail] = useState("");
   const [teams, setTeams] = useState<TeamSummary[]>([]);
+  const [creating, setCreating] = useState(false);
   const [invitations, setInvitations] = useState<IncomingInvitation[]>([]);
 
   useEffect(() => {
@@ -53,12 +55,21 @@ export default function TeamsListPage() {
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <AuthedHeader email={email} />
 
-      <main className="mx-auto max-w-2xl space-y-8 px-6 py-10">
-        <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Teams</h1>
-          <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Group people together so you can search for shared availability across the whole group at once.
-          </p>
+      <main className="mx-auto max-w-2xl space-y-6 px-6 py-10">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Teams</h1>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Group people together so you can search for shared availability across the whole group at once.
+            </p>
+          </div>
+          <Button
+            onClick={() => setCreating(true)}
+            className="inline-flex items-center justify-center gap-2 sm:!w-auto sm:px-4"
+          >
+            <Plus size={16} aria-hidden />
+            <span>Create new team</span>
+          </Button>
         </div>
 
         {invitations.length > 0 && (
@@ -69,10 +80,32 @@ export default function TeamsListPage() {
           />
         )}
 
-        <CreateTeamCard onCreated={(t) => setTeams((prev) => [t, ...prev])} />
-
-        <TeamList teams={teams} />
+        <TeamList teams={teams} onAdd={() => setCreating(true)} />
       </main>
+
+      {creating && (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setCreating(false);
+          }}
+        >
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-zinc-900">
+            <h3 className="mb-3 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              Create a new team
+            </h3>
+            <CreateTeamForm
+              onCancel={() => setCreating(false)}
+              onCreated={(t) => {
+                setTeams((prev) => [t, ...prev]);
+                setCreating(false);
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -137,24 +170,25 @@ function InvitationsForYou({
   );
 }
 
-function CreateTeamCard({ onCreated }: { onCreated: (t: TeamSummary) => void }) {
+function CreateTeamForm({
+  onCreated,
+  onCancel,
+}: {
+  onCreated: (t: TeamSummary) => void;
+  onCancel: () => void;
+}) {
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-    setSuccess(null);
     setSubmitting(true);
     try {
       const t = await createTeam({ name, description: desc });
       onCreated(t);
-      setName("");
-      setDesc("");
-      setSuccess(`Created “${t.name}”.`);
     } catch (err) {
       setError(err instanceof TeamsApiError ? err.message : "Create failed");
     } finally {
@@ -163,34 +197,51 @@ function CreateTeamCard({ onCreated }: { onCreated: (t: TeamSummary) => void }) 
   }
 
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <header className="mb-5">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Create a new team</h2>
-      </header>
-      <form onSubmit={onSubmit} className="space-y-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="team-name">Name</Label>
-          <Input id="team-name" required value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="team-desc">Description (optional)</Label>
-          <Input id="team-desc" value={desc} onChange={(e) => setDesc(e.target.value)} />
-        </div>
-        <FormError message={error} />
-        <FormSuccess message={success} />
-        <Button type="submit" disabled={submitting} className="sm:w-auto sm:px-6">
+    <form onSubmit={onSubmit} className="space-y-4">
+      <div className="space-y-1.5">
+        <Label htmlFor="team-name">Name</Label>
+        <Input
+          id="team-name"
+          autoFocus
+          required
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="team-desc">Description (optional)</Label>
+        <Input id="team-desc" value={desc} onChange={(e) => setDesc(e.target.value)} />
+      </div>
+      <FormError message={error} />
+      <div className="flex gap-2">
+        <Button type="submit" disabled={submitting} className="sm:w-auto sm:px-4">
           {submitting ? "Creating…" : "Create team"}
         </Button>
-      </form>
-    </section>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
-function TeamList({ teams }: { teams: TeamSummary[] }) {
+function TeamList({ teams, onAdd }: { teams: TeamSummary[]; onAdd: () => void }) {
   if (teams.length === 0) {
     return (
       <section className="rounded-xl border border-dashed border-zinc-300 bg-white p-8 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
-        You aren&apos;t in any teams yet. Create one above, or accept an invitation when you receive one.
+        <p>You aren&apos;t in any teams yet.</p>
+        <button
+          type="button"
+          onClick={onAdd}
+          className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+        >
+          <Plus size={14} aria-hidden />
+          Create your first team
+        </button>
       </section>
     );
   }
