@@ -18,6 +18,10 @@ export type SearchResult = {
   slots: Slot[];
   count: number;
   truncated: boolean;
+  /** [startHour, endHour] across the working hours of all selected members.
+   * The calendar uses this to keep the time axis stable across searches
+   * regardless of where slots happen to land. */
+  working_hours_range: [number, number] | null;
 };
 
 export class SearchApiError extends Error {

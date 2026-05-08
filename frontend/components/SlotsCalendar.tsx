@@ -257,7 +257,7 @@ export function SlotsCalendar({
               style={{ height: HOUR_PX }}
               className="relative pr-2 text-right text-[10px] text-zinc-500"
             >
-              <span className="absolute -top-1.5 right-2">{String(h).padStart(2, "0")}:00</span>
+              <span className="absolute top-0.5 right-2 leading-none">{String(h).padStart(2, "0")}:00</span>
             </div>
           ))}
         </div>

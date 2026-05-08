@@ -369,7 +369,11 @@ function SearchForm({
   const [endTouched, setEndTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ slots: Slot[]; truncated: boolean } | null>(null);
+  const [result, setResult] = useState<{
+    slots: Slot[];
+    truncated: boolean;
+    workingHoursRange: [number, number] | null;
+  } | null>(null);
   const [holidays, setHolidays] = useState<Map<string, string>>(new Map());
 
   // Load team detail (member roster) whenever the team changes. If no
@@ -436,7 +440,11 @@ function SearchForm({
         window_start: winStart.toISOString(),
         window_end: winEnd.toISOString(),
       });
-      setResult({ slots: r.slots, truncated: r.truncated });
+      setResult({
+        slots: r.slots,
+        truncated: r.truncated,
+        workingHoursRange: r.working_hours_range,
+      });
       onSearched();
       // Fetch holidays for the search range so the calendar grid can mark them.
       fetchHolidaysForRange(winStart.toISOString(), winEnd.toISOString(), country)
@@ -590,7 +598,13 @@ function SearchForm({
 
       {result && (
         <>
-          <Results slots={result.slots} truncated={result.truncated} durationMin={duration} holidays={holidays} />
+          <Results
+            slots={result.slots}
+            truncated={result.truncated}
+            workingHoursRange={result.workingHoursRange}
+            durationMin={duration}
+            holidays={holidays}
+          />
           <SaveCurrentSearch
             teamId={teamId}
             memberIds={Array.from(selected)}
@@ -741,11 +755,13 @@ function SaveCurrentSearch({
 function Results({
   slots,
   truncated,
+  workingHoursRange,
   durationMin,
   holidays,
 }: {
   slots: Slot[];
   truncated: boolean;
+  workingHoursRange: [number, number] | null;
   durationMin: number;
   holidays: Map<string, string>;
 }) {
@@ -810,7 +826,12 @@ function Results({
       </header>
 
       {view === "calendar" ? (
-        <SlotsCalendar slots={slots} durationMin={durationMin} holidays={holidays} />
+        <SlotsCalendar
+          slots={slots}
+          durationMin={durationMin}
+          holidays={holidays}
+          workingHoursRange={workingHoursRange ?? undefined}
+        />
       ) : (
         <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <div className="space-y-4">

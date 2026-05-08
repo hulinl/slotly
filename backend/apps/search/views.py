@@ -112,6 +112,11 @@ class SearchView(APIView):
         except Exception:  # noqa: BLE001
             pass
 
+        # Compact "earliest start, latest end" across the working_hours of
+        # every selected member — anchors the calendar time axis on the
+        # frontend so multi-member searches show a stable day range.
+        wh_range = _working_hours_range(working_hours_per_user.values())
+
         return Response({
             "slots": [
                 {"start": slot.start.isoformat(), "end": slot.end.isoformat()}
@@ -119,7 +124,38 @@ class SearchView(APIView):
             ],
             "count": len(slots),
             "truncated": truncated,
+            "working_hours_range": wh_range,
         })
+
+
+def _working_hours_range(per_user_hours) -> list[int] | None:
+    """Earliest start hour and latest end hour across all available days,
+    over all users. Returns [start_hour, end_hour] or None when nobody has
+    any available day. Hours are 0-24, end hour is rounded up to the next
+    full hour when minutes>0."""
+    min_start = 24
+    max_end = 0
+    seen = False
+    for wh in per_user_hours:
+        if not isinstance(wh, dict):
+            continue
+        for day in wh.values():
+            if not isinstance(day, dict) or not day.get("available"):
+                continue
+            seen = True
+            try:
+                sh, _sm = (int(x) for x in str(day["start"]).split(":"))
+                eh, em = (int(x) for x in str(day["end"]).split(":"))
+            except (KeyError, ValueError, TypeError):
+                continue
+            if sh < min_start:
+                min_start = sh
+            cap = eh + 1 if em > 0 else eh
+            if cap > max_end:
+                max_end = cap
+    if not seen:
+        return None
+    return [min_start, max_end]
 
 
 def _record_recent_search(user, team: Team, data: dict) -> None:
