@@ -169,14 +169,14 @@ export default function ProfilePage() {
             <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
               Your availability — next 8 weeks
             </h2>
+            <Button
+              onClick={() => setAdding(true)}
+              className="inline-flex items-center justify-center gap-2 sm:!w-auto sm:px-4"
+            >
+              <CalendarOff size={16} aria-hidden />
+              <span>Add unavailability</span>
+            </Button>
           </div>
-          <Button
-            onClick={() => setAdding(true)}
-            className="inline-flex items-center justify-center gap-2 sm:!w-auto sm:px-4"
-          >
-            <CalendarOff size={16} aria-hidden />
-            <span>Add unavailability</span>
-          </Button>
           <p className="text-xs text-zinc-500 dark:text-zinc-400">
             Green = free. Amber = blocks you marked unavailable (tap the trash icon to delete).
           </p>
@@ -252,49 +252,91 @@ function UpcomingUnavailabilityList({
   rows: Unavailability[] | null;
   onDeleted: () => void | Promise<void>;
 }) {
+  const now = Date.now();
   const upcoming = (rows ?? [])
-    .filter((u) => new Date(u.ends_at) >= new Date())
+    .filter((u) => new Date(u.ends_at).getTime() >= now)
     .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+  const past = (rows ?? [])
+    .filter((u) => new Date(u.ends_at).getTime() < now)
+    .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime());
 
-  if (upcoming.length === 0) return null;
+  if (upcoming.length === 0 && past.length === 0) return null;
 
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      <h2 className="mb-1 text-base font-semibold text-zinc-900 dark:text-zinc-50">
-        Upcoming unavailability
-      </h2>
-      <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
-        All blocks you have planned, including ones outside the visible calendar.
-      </p>
-      <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
-        {upcoming.map((u) => (
-          <li key={u.id} className="flex items-start gap-3 py-3">
-            <div className="flex-1">
-              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">{u.label}</p>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                {formatRange(u.starts_at, u.ends_at, u.is_all_day)}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={async () => {
-                if (!confirm(`Delete "${u.label}"?`)) return;
-                try {
-                  await deleteUnavailability(u.id);
-                  await onDeleted();
-                } catch (err) {
-                  alert(err instanceof Error ? err.message : "Delete failed");
-                }
-              }}
-              aria-label={`Delete "${u.label}"`}
-              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-red-600 transition-colors hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30"
-            >
-              <Trash2 size={14} aria-hidden />
-            </button>
-          </li>
-        ))}
-      </ul>
+      {upcoming.length > 0 && (
+        <>
+          <h2 className="mb-1 text-base font-semibold text-zinc-900 dark:text-zinc-50">
+            Upcoming unavailability
+          </h2>
+          <p className="mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+            All blocks you have planned, including ones outside the visible calendar.
+          </p>
+          <UnavailabilityList rows={upcoming} onDeleted={onDeleted} />
+        </>
+      )}
+      {past.length > 0 && (
+        <details className={"group/past " + (upcoming.length > 0 ? "mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800" : "")}>
+          <summary className="cursor-pointer text-sm font-medium text-zinc-700 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100">
+            Past blocks <span className="text-xs text-zinc-400">({past.length})</span>
+          </summary>
+          <p className="mt-1 mb-3 text-xs text-zinc-500 dark:text-zinc-400">
+            Already-finished blocks. They no longer affect availability searches.
+          </p>
+          <UnavailabilityList rows={past} onDeleted={onDeleted} muted />
+        </details>
+      )}
     </section>
+  );
+}
+
+function UnavailabilityList({
+  rows,
+  onDeleted,
+  muted = false,
+}: {
+  rows: Unavailability[];
+  onDeleted: () => void | Promise<void>;
+  muted?: boolean;
+}) {
+  return (
+    <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+      {rows.map((u) => (
+        <li key={u.id} className="flex items-start gap-3 py-3">
+          <div className="flex-1">
+            <p
+              className={
+                "text-sm font-medium " +
+                (muted
+                  ? "text-zinc-500 dark:text-zinc-400"
+                  : "text-zinc-900 dark:text-zinc-50")
+              }
+            >
+              {u.label}
+            </p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              {formatRange(u.starts_at, u.ends_at, u.is_all_day)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!confirm(`Delete "${u.label}"?`)) return;
+              try {
+                await deleteUnavailability(u.id);
+                await onDeleted();
+              } catch (err) {
+                alert(err instanceof Error ? err.message : "Delete failed");
+              }
+            }}
+            aria-label={`Delete "${u.label}"`}
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded text-red-600 transition-colors hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30"
+          >
+            <Trash2 size={14} aria-hidden />
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }
 

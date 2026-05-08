@@ -150,10 +150,10 @@ export function AuthedHeader({ email }: { email: string }) {
         </button>
       </div>
 
-      {/* Mobile dropdown menu */}
+      {/* Mobile dropdown menu — z-[60] to safely cover sticky SettingsNav. */}
       {menuOpen && (
         <div
-          className="absolute inset-x-0 top-full z-50 border-b border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-950 sm:hidden"
+          className="absolute inset-x-0 top-full z-[60] border-b border-zinc-200 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-950 sm:hidden"
           role="menu"
         >
           <nav className="flex flex-col py-2">
