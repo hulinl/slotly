@@ -26,6 +26,9 @@ class Notification(models.Model):
         TEAM_DELETED = "team.deleted", "A team you belong to was deleted"
         # calendar-related
         CALENDAR_SYNC_FAILED = "calendar.sync_failed", "A calendar failed to sync"
+        # connection-related (M22)
+        CONNECTION_REQUESTED = "connection.requested", "Someone wants to connect with you"
+        CONNECTION_ACCEPTED = "connection.accepted", "Your connection request was accepted"
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,

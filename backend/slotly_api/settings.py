@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     "apps.availability",
     "apps.search",
     "apps.notifications",
+    "apps.connections",
 ]
 
 SITE_ID = 1

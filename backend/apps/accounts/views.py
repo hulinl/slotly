@@ -154,9 +154,16 @@ class PeerAvailabilityView(APIView):
         shared = _Team.objects.filter(memberships__user=request.user).filter(
             memberships__user=peer,
         ).exists()
-        if not shared and not peer.share_enabled:
+        from apps.connections.models import Connection as _Connection
+        connected = _Connection.are_connected(request.user.pk, peer.pk)
+        if not (shared or connected or peer.share_enabled):
             return Response(
-                {"detail": "You don't share a team with this user and their profile isn't public."},
+                {
+                    "detail": (
+                        "You're not connected to this user, don't share a group, "
+                        "and their profile isn't public."
+                    ),
+                },
                 status=403,
             )
 
@@ -502,6 +509,7 @@ class TeammateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request: Request, pk: int) -> Response:
+        from apps.connections.models import Connection as _Connection
         target = get_object_or_404(User, pk=pk)
         shared = list(
             Team.objects.filter(memberships__user=request.user)
@@ -509,9 +517,14 @@ class TeammateView(APIView):
             .distinct()
             .values_list("pk", flat=True),
         )
-        if not shared and target.pk != request.user.pk:
+        connected = _Connection.are_connected(request.user.pk, target.pk)
+        if not shared and not connected and target.pk != request.user.pk:
             return Response(
-                {"detail": "You don't share any team with this user."},
+                {
+                    "detail": (
+                        "You're not connected to this user and don't share any group with them."
+                    ),
+                },
                 status=403,
             )
         return Response(
