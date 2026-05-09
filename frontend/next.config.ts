@@ -16,6 +16,17 @@ const nextConfig: NextConfig = {
       { source: "/healthz", destination: `${API}/healthz` },
     ];
   },
+  /**
+   * /settings/teams was the old URL for what is now /groups (M21 rename).
+   * Permanent redirect so old bookmarks and any cached links still land
+   * the user on the right page.
+   */
+  async redirects() {
+    return [
+      { source: "/settings/teams", destination: "/groups", permanent: true },
+      { source: "/settings/teams/:id", destination: "/groups/:id", permanent: true },
+    ];
+  },
 };
 
 export default nextConfig;

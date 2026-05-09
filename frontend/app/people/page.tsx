@@ -55,7 +55,7 @@ export default function PeopleIndexPage() {
             People
           </h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Everyone you share a team with. Click someone to see their availability.
+            Everyone you share a group with. Click someone to see their availability.
           </p>
         </div>
 
@@ -63,7 +63,7 @@ export default function PeopleIndexPage() {
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search by name, email, or team…"
+          placeholder="Search by name, email, or group…"
           autoFocus
         />
 
@@ -71,9 +71,9 @@ export default function PeopleIndexPage() {
           <section className="rounded-xl border border-dashed border-zinc-300 bg-white p-8 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
             {people.length === 0 ? (
               <>
-                You aren&apos;t in any team yet.{" "}
-                <Link href="/settings/teams" className="font-medium text-zinc-900 underline dark:text-zinc-50">
-                  Create a team
+                You aren&apos;t in any group yet.{" "}
+                <Link href="/groups" className="font-medium text-zinc-900 underline dark:text-zinc-50">
+                  Create a group
                 </Link>{" "}
                 or accept an invitation.
               </>

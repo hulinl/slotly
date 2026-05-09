@@ -164,8 +164,8 @@ function DashboardView({
     },
     {
       key: "team",
-      label: "Create or join a team",
-      href: "/settings/teams",
+      label: "Create or join a group",
+      href: "/groups",
       done: data.teams.length > 0,
     },
   ];
@@ -181,7 +181,7 @@ function DashboardView({
               {greeting}
             </h1>
             <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-              Find a free slot, view a teammate&apos;s availability, or block off
+              Find a free slot, view someone&apos;s availability, or block off
               your own time.
             </p>
           </div>
@@ -238,9 +238,9 @@ function DashboardView({
       {/* Stats grid */}
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard
-          label="Teams"
+          label="Groups"
           value={data.teams.length}
-          href="/settings/teams"
+          href="/groups"
           icon={Building2}
         />
         <StatCard
@@ -253,7 +253,7 @@ function DashboardView({
         <StatCard
           label="Invitations"
           value={data.invitations.length}
-          href="/settings/teams"
+          href="/groups"
           accent={data.invitations.length > 0}
           icon={MailOpen}
         />
@@ -342,7 +342,7 @@ function DashboardView({
       <section className="rounded-xl border border-dashed border-zinc-300 bg-white p-5 text-sm text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
         Looking for something else?{" "}
         <Link href="/people" className="font-medium text-zinc-900 underline dark:text-zinc-50">
-          Browse teammates
+          Browse people
         </Link>{" "}
         ·{" "}
         <Link href="/settings" className="font-medium text-zinc-900 underline dark:text-zinc-50">
@@ -469,7 +469,7 @@ function GuestLanding() {
             Find time to meet — without the calendar Tetris
           </h1>
           <p className="text-zinc-600 dark:text-zinc-400">
-            Subscribe to your team&apos;s calendars, pick the people you need, and Slotly shows
+            Subscribe to your group&apos;s calendars, pick the people you need, and Slotly shows
             every shared free slot in the next 3 months.
           </p>
           <div className="mx-auto flex max-w-xs flex-col gap-2">

@@ -48,7 +48,7 @@ export default function InvitationLandingPage() {
       const r = await acceptInvitation(token);
       setState("accepted");
       // Land in the team they just joined
-      setTimeout(() => router.replace(`/settings/teams/${r.team_id}`), 1200);
+      setTimeout(() => router.replace(`/groups/${r.team_id}`), 1200);
     } catch (err) {
       if (err instanceof TeamsApiError) {
         setError(
@@ -143,10 +143,10 @@ export default function InvitationLandingPage() {
     <main className="grid min-h-screen place-items-center bg-zinc-50 px-6 dark:bg-zinc-950">
       <div className="mx-auto w-full max-w-md rounded-xl border border-zinc-200 bg-white p-8 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          Team invitation
+          Group invitation
         </h1>
         <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          Someone invited you to join a team on Slotly. Accept to start
+          Someone invited you to join a group on Slotly. Accept to start
           finding shared availability with them.
         </p>
         <div className="mt-6 flex flex-col gap-3">

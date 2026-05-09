@@ -36,16 +36,16 @@ const NAV: Array<{ href: string; label: string; icon: LucideIcon; matches: (path
     matches: (p) => p === "/people" || p.startsWith("/people/"),
   },
   {
-    href: "/settings/teams",
-    label: "Teams",
+    href: "/groups",
+    label: "Groups",
     icon: Building2,
-    matches: (p) => p.startsWith("/settings/teams"),
+    matches: (p) => p === "/groups" || p.startsWith("/groups/"),
   },
   {
     href: "/settings",
     label: "Settings",
     icon: Settings,
-    matches: (p) => p === "/settings" || (p.startsWith("/settings/") && !p.startsWith("/settings/teams")),
+    matches: (p) => p === "/settings" || p.startsWith("/settings/"),
   },
 ];
 

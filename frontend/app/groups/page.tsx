@@ -57,9 +57,9 @@ export default function TeamsListPage() {
 
       <main className="mx-auto max-w-2xl space-y-6 px-6 py-10">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Teams</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Groups</h1>
           <p className="text-sm text-zinc-600 dark:text-zinc-400">
-            Group people together so you can search for shared availability across the whole group at once.
+            Bundle people together — work team, family, friends, project — so you can search for shared availability across them at once.
           </p>
         </div>
         <div className="flex justify-end">
@@ -68,7 +68,7 @@ export default function TeamsListPage() {
             className="inline-flex !w-auto items-center gap-2 px-4"
           >
             <Plus size={16} aria-hidden />
-            <span>Create new team</span>
+            <span>Create new group</span>
           </Button>
         </div>
 
@@ -94,7 +94,7 @@ export default function TeamsListPage() {
         >
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-zinc-900">
             <h3 className="mb-3 text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-              Create a new team
+              Create a new group
             </h3>
             <CreateTeamForm
               onCancel={() => setCreating(false)}
@@ -215,7 +215,7 @@ function CreateTeamForm({
       <FormError message={error} />
       <div className="flex gap-2">
         <Button type="submit" disabled={submitting} className="sm:w-auto sm:px-4">
-          {submitting ? "Creating…" : "Create team"}
+          {submitting ? "Creating…" : "Create group"}
         </Button>
         <button
           type="button"
@@ -233,14 +233,14 @@ function TeamList({ teams, onAdd }: { teams: TeamSummary[]; onAdd: () => void })
   if (teams.length === 0) {
     return (
       <section className="rounded-xl border border-dashed border-zinc-300 bg-white p-8 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
-        <p>You aren&apos;t in any teams yet.</p>
+        <p>You aren&apos;t in any groups yet.</p>
         <button
           type="button"
           onClick={onAdd}
           className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
         >
           <Plus size={14} aria-hidden />
-          Create your first team
+          Create your first group
         </button>
       </section>
     );
@@ -250,7 +250,7 @@ function TeamList({ teams, onAdd }: { teams: TeamSummary[]; onAdd: () => void })
       {teams.map((t) => (
         <Link
           key={t.id}
-          href={`/settings/teams/${t.id}`}
+          href={`/groups/${t.id}`}
           className="block rounded-xl border border-zinc-200 bg-white p-5 transition-colors hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
         >
           <div className="flex items-center gap-3">

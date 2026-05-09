@@ -163,7 +163,7 @@ function SearchPageInner() {
               Find a time to meet
             </h1>
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Pick a team and the people you need; Slotly returns every shared free slot in your search window.
+              Pick a group and the people you need; Slotly returns every shared free slot in your search window.
             </p>
           </div>
           <RefreshMyCalendarsButton />
@@ -243,8 +243,8 @@ function RefreshMyCalendarsButton() {
 function EmptyTeamsCard() {
   return (
     <section className="rounded-xl border border-dashed border-zinc-300 bg-white p-8 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
-      You aren&apos;t in any teams yet.{" "}
-      <Link href="/settings/teams" className="font-medium text-zinc-900 underline dark:text-zinc-50">
+      You aren&apos;t in any groups yet.{" "}
+      <Link href="/groups" className="font-medium text-zinc-900 underline dark:text-zinc-50">
         Create one
       </Link>{" "}
       to start searching.
@@ -464,7 +464,7 @@ function SearchForm({
         className="space-y-6 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
       >
         <div className="space-y-1.5">
-          <Label htmlFor="team">Team</Label>
+          <Label htmlFor="team">Group</Label>
           <Select
             id="team"
             value={teamId}

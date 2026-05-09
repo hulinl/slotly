@@ -28,12 +28,12 @@ def _register_url(invitation: Invitation) -> str:
 
 
 def send_invitation_email(invitation: Invitation, *, recipient_is_registered: bool) -> None:
-    inviter = invitation.invited_by.email if invitation.invited_by_id else "your teammate"
+    inviter = invitation.invited_by.email if invitation.invited_by_id else "someone you know"
     team = invitation.team.name
     if recipient_is_registered:
         link = _accept_url(invitation)
         body = (
-            f"{inviter} invited you to join the team \"{team}\" on Slotly.\n\n"
+            f"{inviter} invited you to join the group \"{team}\" on Slotly.\n\n"
             f"Accept or decline here:\n{link}\n\n"
             f"This invitation expires on {invitation.expires_at:%Y-%m-%d}."
         )
@@ -41,9 +41,9 @@ def send_invitation_email(invitation: Invitation, *, recipient_is_registered: bo
     else:
         link = _register_url(invitation)
         body = (
-            f"{inviter} invited you to join the team \"{team}\" on Slotly.\n\n"
-            f"Slotly is a free tool that finds time slots when everyone on the team is free.\n\n"
-            f"Sign up here — once you verify your email, you'll be added to the team automatically:\n{link}\n\n"
+            f"{inviter} invited you to join the group \"{team}\" on Slotly.\n\n"
+            f"Slotly is a free tool that finds time slots when everyone in the group is free.\n\n"
+            f"Sign up here — once you verify your email, you'll be added to the group automatically:\n{link}\n\n"
             f"This invitation expires on {invitation.expires_at:%Y-%m-%d}."
         )
         subject = f"You're invited to {team} on Slotly"

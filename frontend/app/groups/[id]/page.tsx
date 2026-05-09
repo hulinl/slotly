@@ -47,7 +47,7 @@ export default function TeamDetailPage() {
         await refresh();
       } catch (err) {
         if (err instanceof TeamsApiError && err.status === 404) {
-          router.replace("/settings/teams");
+          router.replace("/groups");
           return;
         }
         setError(err instanceof Error ? err.message : "Load failed");
@@ -78,17 +78,17 @@ export default function TeamDetailPage() {
     if (!confirm(`Leave “${team!.name}”?`)) return;
     try {
       await leaveTeam(teamId);
-      router.replace("/settings/teams");
+      router.replace("/groups");
     } catch (err) {
       alert(err instanceof Error ? err.message : "Leave failed");
     }
   }
 
   async function onDelete() {
-    if (!confirm(`Delete team “${team!.name}”? This removes all members and invitations.`)) return;
+    if (!confirm(`Delete group “${team!.name}”? This removes all members and invitations.`)) return;
     try {
       await deleteTeam(teamId);
-      router.replace("/settings/teams");
+      router.replace("/groups");
     } catch (err) {
       alert(err instanceof Error ? err.message : "Delete failed");
     }
@@ -96,7 +96,7 @@ export default function TeamDetailPage() {
 
   return (
     <Shell email={me.email ?? ""} onLogout={() => router.replace("/")}>
-      <BackButton fallback="/settings/teams" />
+      <BackButton fallback="/groups" />
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{team.name}</h1>
         {team.description && <p className="text-sm text-zinc-600 dark:text-zinc-400">{team.description}</p>}
@@ -166,7 +166,7 @@ function RosterCard({
     }
   }
   async function onRemove(userId: number) {
-    if (!confirm("Remove this member from the team?")) return;
+    if (!confirm("Remove this member from the group?")) return;
     try {
       await removeMember(team.id, userId);
       await onChanged();
@@ -262,7 +262,7 @@ function InviteCard({ teamId, onInvited }: { teamId: number; onInvited: () => vo
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <header className="mb-3">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Invite a teammate</h2>
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Invite someone</h2>
         <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
           Send an email invitation. Unregistered users will be added automatically once they verify their email.
         </p>
@@ -274,7 +274,7 @@ function InviteCard({ teamId, onInvited }: { teamId: number; onInvited: () => vo
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="teammate@company.com"
+            placeholder="name@example.com"
           />
           <select
             value={role}
@@ -369,7 +369,7 @@ function SettingsCard({ team, onSaved }: { team: TeamDetail; onSaved: () => void
   return (
     <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <header className="mb-3">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Team settings</h2>
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">Group settings</h2>
       </header>
       <form onSubmit={onSubmit} className="space-y-4">
         <div className="space-y-1.5">
@@ -408,19 +408,19 @@ function DangerZone({
           onClick={onLeave}
           className="rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100 dark:border-red-900 dark:text-red-200 dark:hover:bg-red-950/40"
         >
-          Leave team
+          Leave group
         </button>
         {amAdmin && (
           <button
             onClick={onDelete}
             className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
           >
-            Delete team
+            Delete group
           </button>
         )}
       </div>
       <p className="mt-3 text-xs text-red-700/80 dark:text-red-200/70">
-        If you&apos;re the only admin and leave, the team will be deleted automatically.
+        If you&apos;re the only admin and leave, the group will be deleted automatically.
       </p>
     </section>
   );

@@ -91,12 +91,12 @@ export function renderNotification(n: Notification): RenderedNotification {
     member_email?: string;
     calendar_name?: string;
   };
-  const teamLink = p.team_id !== undefined ? `/settings/teams/${p.team_id}` : undefined;
+  const teamLink = p.team_id !== undefined ? `/groups/${p.team_id}` : undefined;
   switch (n.type) {
     case "team.invitation_sent":
       return {
         text: `${p.inviter_email ?? "Someone"} invited you to “${p.team_name ?? "a team"}”.`,
-        href: "/settings/teams",
+        href: "/groups",
       };
     case "team.invitation_accepted":
       return {

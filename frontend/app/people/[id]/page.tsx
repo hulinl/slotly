@@ -114,7 +114,7 @@ export default function TeammateProfilePage() {
         <AuthedHeader email={meEmail} />
         <main className="mx-auto max-w-2xl space-y-4 px-6 py-10">
           <FormError message={error} />
-          <Link href="/settings/teams" className="text-sm text-zinc-600 underline dark:text-zinc-300">
+          <Link href="/groups" className="text-sm text-zinc-600 underline dark:text-zinc-300">
             ← Back to teams
           </Link>
         </main>
@@ -145,7 +145,7 @@ export default function TeammateProfilePage() {
         <BackButton
           fallback={
             user.shared_team_ids[0]
-              ? `/settings/teams/${user.shared_team_ids[0]}`
+              ? `/groups/${user.shared_team_ids[0]}`
               : "/people"
           }
         />
