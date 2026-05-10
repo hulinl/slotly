@@ -25,6 +25,7 @@ const nextConfig: NextConfig = {
     return [
       { source: "/settings/teams", destination: "/groups", permanent: true },
       { source: "/settings/teams/:id", destination: "/groups/:id", permanent: true },
+      { source: "/connections", destination: "/people", permanent: true },
     ];
   },
 };

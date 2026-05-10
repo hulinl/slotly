@@ -459,13 +459,30 @@ def _sole_admin_team_ids(user) -> list[int]:
 
 class TeammatesIndexView(APIView):
     """
-    GET /api/users — list of users the caller can see (anyone in any
-    team they're a member of). Used by the People index page.
+    GET /api/users — the caller's people graph in one payload:
+
+      {
+        "people":   [<accepted: group-mates ∪ connections>],
+        "incoming": [<pending Connection rows where caller is the receiver>],
+        "outgoing": [<pending Connection rows the caller sent>]
+      }
+
+    `people[*]` carries `shared_team_names` (may be empty) and
+    `connection_id` (null when visibility comes only from a shared
+    group). UI uses this to badge each row and offer the right
+    actions (View profile / Disconnect / Leave group).
+
+    Replaces the old flat-array shape after Connections + People were
+    merged into a single /people screen.
     """
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request: Request) -> Response:
+        from apps.connections.models import Connection
+        from apps.connections.serializers import ConnectionSerializer
+
+        # 1. Group-mates: anyone the caller shares a Team with.
         my_teams = Team.objects.filter(memberships__user=request.user).values_list("pk", flat=True)
         rows = (
             Membership.objects.filter(team_id__in=my_teams)
@@ -473,7 +490,6 @@ class TeammatesIndexView(APIView):
             .select_related("user", "team")
             .values("user__id", "user__email", "user__first_name", "user__last_name", "team__name")
         )
-        # Group rows per user with team list.
         bucket: dict[int, dict] = {}
         for r in rows:
             uid = r["user__id"]
@@ -485,17 +501,51 @@ class TeammatesIndexView(APIView):
                     "first_name": r["user__first_name"],
                     "last_name": r["user__last_name"],
                     "shared_team_names": [],
+                    "connection_id": None,
                 },
             )
             entry["shared_team_names"].append(r["team__name"])
-        # Stable sort: name first, email fallback.
-        out = sorted(
+
+        # 2. Accepted connections: union into the same bucket. A peer who
+        #    is *also* a group-mate keeps both signals; one who is only
+        #    connected appears here for the first time.
+        accepted_qs = Connection.objects.filter(
+            status=Connection.Status.ACCEPTED,
+        ).filter(models.Q(user_low=request.user) | models.Q(user_high=request.user))
+        for conn in accepted_qs.select_related("user_low", "user_high"):
+            peer = conn.user_high if conn.user_low_id == request.user.pk else conn.user_low
+            entry = bucket.setdefault(
+                peer.pk,
+                {
+                    "id": peer.pk,
+                    "email": peer.email,
+                    "first_name": peer.first_name,
+                    "last_name": peer.last_name,
+                    "shared_team_names": [],
+                    "connection_id": None,
+                },
+            )
+            entry["connection_id"] = conn.pk
+
+        people = sorted(
             bucket.values(),
             key=lambda x: (
                 (x["first_name"] + " " + x["last_name"]).strip().lower() or x["email"].lower(),
             ),
         )
-        return Response(out)
+
+        # 3. Pending requests, split by direction so the UI can render
+        #    them in dedicated panels.
+        pending_qs = Connection.objects.filter(
+            status=Connection.Status.PENDING,
+        ).filter(models.Q(user_low=request.user) | models.Q(user_high=request.user))
+        ctx = {"request": request}
+        incoming, outgoing = [], []
+        for conn in pending_qs.select_related("user_low", "user_high", "requested_by"):
+            data = ConnectionSerializer(conn, context=ctx).data
+            (outgoing if conn.requested_by_id == request.user.pk else incoming).append(data)
+
+        return Response({"people": people, "incoming": incoming, "outgoing": outgoing})
 
 
 class TeammateView(APIView):

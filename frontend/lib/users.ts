@@ -1,5 +1,6 @@
-/** Client for /api/users (index) and /api/users/<id> (detail). */
+/** Client for /api/users (people graph) and /api/users/<id> (detail). */
 
+import type { Connection } from "./connections";
 import type { WorkingHours } from "./me";
 
 export type Teammate = {
@@ -13,19 +14,20 @@ export type Teammate = {
   shared_team_ids: number[];
 };
 
-export type TeammateSummary = {
+export type Person = {
   id: number;
   email: string;
   first_name: string;
   last_name: string;
   shared_team_names: string[];
+  connection_id: number | null;
 };
 
-export async function listTeammates(): Promise<TeammateSummary[]> {
-  const res = await fetch("/api/users", { credentials: "include" });
-  if (!res.ok) throw new UsersApiError(res.status, `HTTP ${res.status}`);
-  return res.json();
-}
+export type PeopleGraph = {
+  people: Person[];
+  incoming: Connection[];
+  outgoing: Connection[];
+};
 
 export class UsersApiError extends Error {
   status: number;
@@ -33,6 +35,12 @@ export class UsersApiError extends Error {
     super(message);
     this.status = status;
   }
+}
+
+export async function listPeople(): Promise<PeopleGraph> {
+  const res = await fetch("/api/users", { credentials: "include" });
+  if (!res.ok) throw new UsersApiError(res.status, `HTTP ${res.status}`);
+  return res.json();
 }
 
 export async function getTeammate(id: number): Promise<Teammate> {

@@ -55,8 +55,6 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
-export const listConnections = () => request<Connection[]>("/api/connections");
-
 export const requestConnection = (email: string) =>
   request<Connection>("/api/connections/request", {
     method: "POST",

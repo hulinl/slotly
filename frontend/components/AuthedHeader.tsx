@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from "react";
 import {
   Building2,
   Calendar,
-  LinkIcon,
   LogOut,
   Menu,
   Settings,
@@ -35,12 +34,6 @@ const NAV: Array<{ href: string; label: string; icon: LucideIcon; matches: (path
     label: "People",
     icon: Users,
     matches: (p) => p === "/people" || p.startsWith("/people/"),
-  },
-  {
-    href: "/connections",
-    label: "Connections",
-    icon: LinkIcon,
-    matches: (p) => p === "/connections",
   },
   {
     href: "/groups",
