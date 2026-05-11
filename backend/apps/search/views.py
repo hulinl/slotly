@@ -22,6 +22,7 @@ from apps.teams.permissions import is_member
 from .engine import compute_slots
 from .models import RECENT_SEARCH_LIMIT, RecentSearch, SavedSearch
 from .serializers import (
+    CheckTimeInputSerializer,
     RecentSearchSerializer,
     SavedSearchSerializer,
     SearchInputSerializer,
@@ -126,6 +127,119 @@ class SearchView(APIView):
             "truncated": truncated,
             "working_hours_range": wh_range,
         })
+
+
+class CheckTimeView(APIView):
+    """
+    POST /api/search/check-time
+        body: { team_id, member_ids[], start, end }
+        response: {
+            everyone_free: bool,
+            people: [
+                { user_id, first_name, last_name, email,
+                  status: "free" | "busy",
+                  conflicts: [{ start, end }]  # clipped to the requested window
+                }, ...
+            ]
+        }
+
+    Companion mode to /api/search — instead of 'find slots in a range',
+    answers the more common everyday question 'is everyone free at this
+    specific time?'. Working-hours are intentionally NOT applied here:
+    the user asked a literal question about a real moment, so a person
+    with an empty calendar at that moment is 'free' even if it's outside
+    their normal working hours.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: Request) -> Response:
+        s = CheckTimeInputSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        data = s.validated_data
+
+        team = get_object_or_404(Team, pk=data["team_id"])
+        if not is_member(request.user, team):
+            return Response({"detail": "You are not a member of this team."}, status=403)
+
+        team_member_ids = set(
+            Membership.objects.filter(team=team, user_id__in=data["member_ids"])
+            .values_list("user_id", flat=True),
+        )
+        bad = set(data["member_ids"]) - team_member_ids
+        if bad:
+            return Response(
+                {"detail": f"Some users are not members of this team: {sorted(bad)}"},
+                status=400,
+            )
+
+        win_start, win_end = data["start"], data["end"]
+
+        # Same TRANSP + all-day semantics as /api/search.
+        events = CalendarEvent.objects.filter(
+            Q(transp=CalendarEvent.Transparency.OPAQUE) | Q(is_all_day=True),
+            calendar__owner_id__in=team_member_ids,
+            calendar__include_in_busy=True,
+            dtstart__lt=win_end,
+            dtend__gt=win_start,
+        ).exclude(
+            status=CalendarEvent.Status.CANCELLED,
+        ).values("calendar__owner_id", "dtstart", "dtend")
+
+        conflicts_per_user: dict[int, list[tuple]] = {uid: [] for uid in team_member_ids}
+        for ev in events:
+            conflicts_per_user[ev["calendar__owner_id"]].append(
+                (max(ev["dtstart"], win_start), min(ev["dtend"], win_end)),
+            )
+
+        for u in Unavailability.objects.filter(
+            user_id__in=team_member_ids,
+            starts_at__lt=win_end,
+            ends_at__gt=win_start,
+        ).values("user_id", "starts_at", "ends_at"):
+            conflicts_per_user[u["user_id"]].append(
+                (max(u["starts_at"], win_start), min(u["ends_at"], win_end)),
+            )
+
+        users = User.objects.filter(pk__in=team_member_ids).order_by(
+            "first_name", "last_name", "email",
+        )
+        people = []
+        everyone_free = True
+        for u in users:
+            raw = conflicts_per_user.get(u.pk, [])
+            merged = _merge_intervals(raw)
+            status_str = "busy" if merged else "free"
+            if merged:
+                everyone_free = False
+            people.append({
+                "user_id": u.pk,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "email": u.email,
+                "status": status_str,
+                "conflicts": [
+                    {"start": s.isoformat(), "end": e.isoformat()} for s, e in merged
+                ],
+            })
+
+        return Response({"everyone_free": everyone_free, "people": people})
+
+
+def _merge_intervals(intervals: list[tuple]) -> list[tuple]:
+    """Merge overlapping (start, end) intervals into a minimal set. Input
+    need not be sorted; output is sorted by start."""
+    if not intervals:
+        return []
+    items = sorted(intervals, key=lambda x: x[0])
+    out = [items[0]]
+    for s, e in items[1:]:
+        last_s, last_e = out[-1]
+        if s <= last_e:
+            out[-1] = (last_s, max(last_e, e))
+        else:
+            out.append((s, e))
+    return out
 
 
 def _working_hours_range(per_user_hours) -> list[int] | None:

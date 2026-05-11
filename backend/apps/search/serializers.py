@@ -44,6 +44,33 @@ class SearchInputSerializer(serializers.Serializer):
         return attrs
 
 
+class CheckTimeInputSerializer(serializers.Serializer):
+    """Inputs for POST /api/search/check-time — 'is everyone free in this
+    specific window?'. Reuses the same team/membership shape as a normal
+    search but the window is a single interval, not a search range."""
+
+    team_id = serializers.IntegerField()
+    member_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        min_length=1,
+        max_length=200,
+    )
+    start = serializers.DateTimeField()
+    end = serializers.DateTimeField()
+
+    def validate(self, attrs: dict) -> dict:
+        if attrs["start"] >= attrs["end"]:
+            raise serializers.ValidationError({"end": "must be later than start"})
+        if attrs["end"] - attrs["start"] > timedelta(days=1):
+            raise serializers.ValidationError(
+                {"end": "single check window cannot exceed 24 hours"},
+            )
+        ids = attrs["member_ids"]
+        if len(set(ids)) != len(ids):
+            raise serializers.ValidationError({"member_ids": "must be unique"})
+        return attrs
+
+
 # ---------------------------------------------------------------------------
 # Saved + recent searches
 # ---------------------------------------------------------------------------

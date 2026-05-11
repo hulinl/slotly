@@ -12,7 +12,14 @@ import { getSession } from "@/lib/auth";
 import { syncAllMyCalendars } from "@/lib/calendars";
 import { fetchHolidaysForRange } from "@/lib/holidays";
 import { getMe } from "@/lib/me";
-import { searchSlots, SearchApiError, type Slot } from "@/lib/search";
+import {
+  checkTime,
+  searchSlots,
+  SearchApiError,
+  type CheckTimePerson,
+  type CheckTimeResult,
+  type Slot,
+} from "@/lib/search";
 import {
   createSavedSearch,
   deleteSavedSearch,
@@ -54,6 +61,8 @@ export default function SearchPage() {
   );
 }
 
+type Mode = "find" | "check";
+
 function SearchPageInner() {
   const router = useRouter();
   const queryParams = useSearchParams();
@@ -64,6 +73,7 @@ function SearchPageInner() {
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   const [loaded, setLoaded] = useState(false);
 
+  const [mode, setMode] = useState<Mode>("find");
   const [seed, setSeed] = useState<FormSeed | null>(null);
   const [seedKey, setSeedKey] = useState(0);
 
@@ -160,18 +170,22 @@ function SearchPageInner() {
         <div className="flex items-start justify-between gap-3">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Find a time to meet
+              {mode === "find" ? "Find a time to meet" : "Check a specific time"}
             </h1>
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Pick a group and the people you need; Slotly returns every shared free slot in your search window.
+              {mode === "find"
+                ? "Pick a group and the people you need; Slotly returns every shared free slot in your search window."
+                : "Pick a specific date and time, and Slotly tells you who's free and who's busy."}
             </p>
           </div>
           <RefreshMyCalendarsButton />
         </div>
 
+        <ModeTabs mode={mode} onChange={setMode} />
+
         {teams.length === 0 ? (
           <EmptyTeamsCard />
-        ) : (
+        ) : mode === "find" ? (
           <>
             {(savedSearches.length > 0 || recentSearches.length > 0) && (
               <PresetsPanel
@@ -194,8 +208,38 @@ function SearchPageInner() {
               />
             )}
           </>
+        ) : (
+          <CheckTimeForm teams={teams} initialTeamId={teams[0].id} />
         )}
       </main>
+    </div>
+  );
+}
+
+function ModeTabs({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Search mode"
+      className="inline-flex rounded-lg border border-zinc-200 bg-white p-1 text-sm font-medium dark:border-zinc-800 dark:bg-zinc-900"
+    >
+      {(["find", "check"] as const).map((m) => (
+        <button
+          key={m}
+          type="button"
+          role="tab"
+          aria-selected={mode === m}
+          onClick={() => onChange(m)}
+          className={
+            "rounded-md px-3 py-1.5 transition-colors " +
+            (mode === m
+              ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+              : "text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800")
+          }
+        >
+          {m === "find" ? "Find slots" : "Check a time"}
+        </button>
+      ))}
     </div>
   );
 }
@@ -615,6 +659,255 @@ function SearchForm({
         </>
       )}
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Check-time mode — 'is everyone free at this exact moment?'
+// ---------------------------------------------------------------------------
+
+function CheckTimeForm({
+  teams,
+  initialTeamId,
+}: {
+  teams: TeamSummary[];
+  initialTeamId: number;
+}) {
+  const [teamId, setTeamId] = useState<number>(initialTeamId);
+  const [team, setTeam] = useState<TeamDetail | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [date, setDate] = useState<string>(toLocalDate(new Date()));
+  const [startTime, setStartTime] = useState<string>("14:00");
+  const [endTime, setEndTime] = useState<string>("15:00");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<CheckTimeResult | null>(null);
+
+  // Load roster on team change, default to "everyone".
+  useEffect(() => {
+    setTeam(null);
+    let cancelled = false;
+    getTeam(teamId).then((t) => {
+      if (cancelled) return;
+      setTeam(t);
+      setSelected(new Set(t.members.map((m) => m.user_id)));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [teamId]);
+
+  const memberCount = team?.members.length ?? 0;
+  const allSelected = team !== null && selected.size === memberCount && memberCount > 0;
+
+  function toggleMember(userId: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setResult(null);
+    if (selected.size === 0) {
+      setError("Pick at least one person.");
+      return;
+    }
+    const start = new Date(`${date}T${startTime}:00`);
+    const end = new Date(`${date}T${endTime}:00`);
+    if (end <= start) {
+      setError("End time must be after start time.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const r = await checkTime({
+        team_id: teamId,
+        member_ids: Array.from(selected),
+        start: start.toISOString(),
+        end: end.toISOString(),
+      });
+      setResult(r);
+    } catch (err) {
+      setError(err instanceof SearchApiError ? err.message : "Check failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <>
+      <form
+        onSubmit={onSubmit}
+        className="space-y-6 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+      >
+        <div className="space-y-1.5">
+          <Label htmlFor="ct-team">Group</Label>
+          <Select id="ct-team" value={teamId} onChange={(e) => setTeamId(Number(e.target.value))}>
+            {teams.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <Label>
+              People ({selected.size}/{memberCount})
+            </Label>
+            {team && (
+              <button
+                type="button"
+                onClick={() =>
+                  setSelected(allSelected ? new Set() : new Set(team.members.map((m) => m.user_id)))
+                }
+                className="text-xs text-zinc-600 underline dark:text-zinc-300"
+              >
+                {allSelected ? "Clear" : "Select all"}
+              </button>
+            )}
+          </div>
+          {team === null ? (
+            <p className="text-sm text-zinc-500">Loading members…</p>
+          ) : (
+            <ul className="divide-y divide-zinc-100 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+              {team.members.map((m) => (
+                <li key={m.user_id} className="flex items-center gap-3 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    id={`ct-m-${m.user_id}`}
+                    checked={selected.has(m.user_id)}
+                    onChange={() => toggleMember(m.user_id)}
+                    className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                  <label htmlFor={`ct-m-${m.user_id}`} className="flex-1 cursor-pointer text-sm">
+                    {m.first_name || m.last_name
+                      ? `${m.first_name} ${m.last_name}`.trim()
+                      : m.email}
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="ct-date">Date</Label>
+            <DatePicker id="ct-date" value={date} onChange={setDate} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ct-start">From</Label>
+            <Input
+              id="ct-start"
+              type="time"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+              step={300}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ct-end">Until</Label>
+            <Input
+              id="ct-end"
+              type="time"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+              step={300}
+            />
+          </div>
+        </div>
+
+        <FormError message={error} />
+        <Button type="submit" disabled={submitting} className="sm:w-auto sm:px-6">
+          {submitting ? "Checking…" : "Check availability"}
+        </Button>
+      </form>
+
+      {result && <CheckTimeResultPanel result={result} />}
+    </>
+  );
+}
+
+function CheckTimeResultPanel({ result }: { result: CheckTimeResult }) {
+  const busyCount = result.people.filter((p) => p.status === "busy").length;
+  const freeCount = result.people.length - busyCount;
+
+  return (
+    <section className="space-y-3">
+      <div
+        className={
+          "rounded-xl border p-5 " +
+          (result.everyone_free
+            ? "border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/30"
+            : "border-rose-200 bg-rose-50 dark:border-rose-900 dark:bg-rose-950/30")
+        }
+      >
+        <h2
+          className={
+            "text-base font-semibold " +
+            (result.everyone_free
+              ? "text-emerald-800 dark:text-emerald-200"
+              : "text-rose-800 dark:text-rose-200")
+          }
+        >
+          {result.everyone_free
+            ? "Everyone is free."
+            : `${busyCount} busy, ${freeCount} free.`}
+        </h2>
+        {!result.everyone_free && (
+          <p className="mt-1 text-sm text-rose-700 dark:text-rose-300">
+            See per-person breakdown below.
+          </p>
+        )}
+      </div>
+
+      <ul className="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+        {result.people.map((p) => (
+          <CheckTimePersonRow key={p.user_id} person={p} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function CheckTimePersonRow({ person }: { person: CheckTimePerson }) {
+  const fullName = `${person.first_name} ${person.last_name}`.trim() || person.email;
+  const isFree = person.status === "free";
+  return (
+    <li className="px-5 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <Link
+          href={`/people/${person.user_id}`}
+          className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-900 hover:underline dark:text-zinc-50"
+        >
+          {fullName}
+        </Link>
+        <span
+          className={
+            "shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium " +
+            (isFree
+              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+              : "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200")
+          }
+        >
+          {isFree ? "Free" : "Busy"}
+        </span>
+      </div>
+      {!isFree && person.conflicts.length > 0 && (
+        <ul className="mt-1 ml-1 space-y-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+          {person.conflicts.map((c, i) => (
+            <li key={i}>Busy {formatTimeRange(c)}</li>
+          ))}
+        </ul>
+      )}
+    </li>
   );
 }
 

@@ -53,3 +53,40 @@ export async function searchSlots(input: SearchInput): Promise<SearchResult> {
   if (!res.ok) throw new SearchApiError(res.status, body);
   return body as SearchResult;
 }
+
+// ---------------------------------------------------------------------------
+// Check-time mode: 'is everyone free at this specific time?'
+// ---------------------------------------------------------------------------
+
+export type CheckTimeInput = {
+  team_id: number;
+  member_ids: number[];
+  start: string; // ISO
+  end: string;   // ISO
+};
+
+export type CheckTimePerson = {
+  user_id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+  status: "free" | "busy";
+  conflicts: Slot[];
+};
+
+export type CheckTimeResult = {
+  everyone_free: boolean;
+  people: CheckTimePerson[];
+};
+
+export async function checkTime(input: CheckTimeInput): Promise<CheckTimeResult> {
+  const res = await fetch("/api/search/check-time", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
+    body: JSON.stringify(input),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new SearchApiError(res.status, body);
+  return body as CheckTimeResult;
+}
