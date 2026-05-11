@@ -125,13 +125,13 @@ export const inviteToTeam = (teamId: number, email: string, role: TeamRole = "me
     body: JSON.stringify({ email, role }),
   });
 
-/** Add an accepted connection directly to the group (no invitation email). */
-export const addConnectionToTeam = (
+/** Send an in-app group invitation to an accepted connection (no email). */
+export const inviteConnectionToTeam = (
   teamId: number,
   userId: number,
   role: TeamRole = "member",
 ) =>
-  request<TeamMember>(`/api/teams/${teamId}/add-connection`, {
+  request<{ detail: string; id: number }>(`/api/teams/${teamId}/invite-connection`, {
     method: "POST",
     body: JSON.stringify({ user_id: userId, role }),
   });

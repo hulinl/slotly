@@ -10,8 +10,8 @@ import { Button, FormError, Input, Label } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import {
   acceptInvitation,
-  addConnectionToTeam,
   createTeam,
+  inviteConnectionToTeam,
   inviteToTeam,
   listMyInvitations,
   listTeams,
@@ -229,34 +229,33 @@ function CreateTeamForm({
     try {
       const t = await createTeam({ name, description: desc });
       const failures: string[] = [];
-      let addedCount = 0;
-      let invitedCount = 0;
+      let connInvitedCount = 0;
+      let emailInvitedCount = 0;
       for (const userId of pickedIds) {
-        setProgress(`Adding connections (${addedCount + 1}/${pickedIds.size})…`);
+        setProgress(`Inviting connections (${connInvitedCount + 1}/${pickedIds.size})…`);
         try {
-          await addConnectionToTeam(t.id, userId);
-          addedCount += 1;
+          await inviteConnectionToTeam(t.id, userId);
+          connInvitedCount += 1;
         } catch (err) {
           failures.push(err instanceof Error ? err.message : `user ${userId}`);
         }
       }
       for (const email of emails) {
-        setProgress(`Sending invitations (${invitedCount + 1}/${emails.length})…`);
+        setProgress(`Sending email invitations (${emailInvitedCount + 1}/${emails.length})…`);
         try {
           await inviteToTeam(t.id, email);
-          invitedCount += 1;
+          emailInvitedCount += 1;
         } catch (err) {
           failures.push(email + ": " + (err instanceof Error ? err.message : "failed"));
         }
       }
       if (failures.length > 0) {
-        setError(`Group created. Some adds/invites failed: ${failures.join("; ")}`);
+        setError(`Group created, but some invites failed: ${failures.join("; ")}`);
         setProgress(null);
-        // Still call onCreated so the new group shows up in the list.
-        onCreated({ ...t, member_count: 1 + addedCount });
+        onCreated({ ...t, member_count: 1 });
         return;
       }
-      onCreated({ ...t, member_count: 1 + addedCount });
+      onCreated({ ...t, member_count: 1 });
     } catch (err) {
       setError(err instanceof TeamsApiError ? err.message : "Create failed");
       setProgress(null);
@@ -285,7 +284,7 @@ function CreateTeamForm({
 
       <div className="space-y-1.5">
         <Label>
-          Add from your connections{" "}
+          Invite from your connections{" "}
           {pickedIds.size > 0 && (
             <span className="text-xs font-normal text-zinc-500">({pickedIds.size} picked)</span>
           )}
@@ -294,7 +293,7 @@ function CreateTeamForm({
           <p className="text-sm text-zinc-500">Loading…</p>
         ) : connections.length === 0 ? (
           <p className="rounded-md border border-dashed border-zinc-300 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-700">
-            No accepted connections yet. Use the email field below, or add people on{" "}
+            No accepted connections yet. Use the email field below, or send a connection request from{" "}
             <Link href="/people" className="underline">
               People
             </Link>{" "}
@@ -323,7 +322,8 @@ function CreateTeamForm({
           </ul>
         )}
         <p className="text-xs text-zinc-500">
-          Connections are added directly — no email invitation needed.
+          They&apos;ll get an in-app invitation (no email) and have to accept before joining.
+          Don&apos;t see someone you share a group with? Send them a connection request first, or invite by email below.
         </p>
       </div>
 
@@ -384,7 +384,7 @@ function CreateTeamForm({
           {submitting
             ? "Creating…"
             : pickedIds.size + emails.length > 0
-              ? `Create with ${pickedIds.size + emails.length} ${pickedIds.size + emails.length === 1 ? "person" : "people"}`
+              ? `Create + invite ${pickedIds.size + emails.length}`
               : "Create group"}
         </Button>
         <button

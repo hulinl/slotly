@@ -209,20 +209,21 @@ class TeamViewSet(ModelViewSet):
             )
         return Response({"detail": "Invitation sent.", "id": invitation.id}, status=201)
 
-    @action(detail=True, methods=["post"], url_path="add-connection")
-    def add_connection(self, request: Request, pk: int | None = None) -> Response:
+    @action(detail=True, methods=["post"], url_path="invite-connection")
+    def invite_connection(self, request: Request, pk: int | None = None) -> Response:
         """
-        POST /api/teams/<id>/add-connection
+        POST /api/teams/<id>/invite-connection
             body: { user_id, role? }
 
-        Add an existing **accepted connection** directly as a member —
-        no invitation email round-trip needed because they already
-        opted in to share visibility via the Connection model (M22).
+        Send an **in-app** group invitation to an accepted Connection
+        (M22). No outbound email is sent — they're already on Slotly
+        and have explicitly opted into seeing notifications from the
+        caller. The recipient still has to accept; admins cannot
+        forcibly enrol people into a group, only invite them.
 
         Validates: caller is admin of the team, target is an accepted
-        connection of caller, target is not already a member. Any
-        pending invitation for this person is auto-cancelled (the
-        direct add supersedes it).
+        connection of caller, target is not already a member, and
+        there isn't already a pending invitation for this email.
         """
         from apps.connections.models import Connection
 
@@ -238,7 +239,7 @@ class TeamViewSet(ModelViewSet):
         if not user_id:
             return Response({"user_id": "Required."}, status=400)
         if user_id == request.user.pk:
-            return Response({"user_id": "Cannot add yourself."}, status=400)
+            return Response({"user_id": "Cannot invite yourself."}, status=400)
 
         role = (request.data.get("role") or Membership.Role.MEMBER).strip()
         if role not in {Membership.Role.MEMBER, Membership.Role.ADMIN}:
@@ -250,47 +251,50 @@ class TeamViewSet(ModelViewSet):
 
         if not Connection.are_connected(request.user.pk, target.pk):
             return Response(
-                {"detail": "You can only add accepted connections directly."},
+                {"detail": "You can only invite accepted connections this way."},
                 status=403,
             )
 
         if Membership.objects.filter(team=team, user=target).exists():
             return Response({"detail": "Already a member of this group."}, status=400)
 
-        with transaction.atomic():
-            membership = Membership.objects.create(team=team, user=target, role=role)
-            # Supersede any outstanding email invitation for this user.
-            Invitation.objects.filter(
-                team=team,
-                invited_email__iexact=target.email,
-                status=Invitation.Status.PENDING,
-            ).update(status=Invitation.Status.ACCEPTED)
-
-        payload = {
-            "team_id": team.pk,
-            "team_name": team.name,
-            "added_by_email": request.user.email,
-        }
-        notify(target, Notification.Type.TEAM_MEMBER_ADDED, payload)
-        # Other admins (not the actor) see a 'someone joined' event so the
-        # in-group activity feel matches a normal invitation acceptance.
-        for am in (
-            Membership.objects.filter(team=team, role=Membership.Role.ADMIN)
-            .exclude(user_id=request.user.pk)
-            .exclude(user_id=target.pk)
-            .select_related("user")
-        ):
-            notify(
-                am.user,
-                Notification.Type.TEAM_MEMBER_JOINED,
-                {
-                    "team_id": team.pk,
-                    "team_name": team.name,
-                    "accepter_email": target.email,
-                    "member_email": target.email,
-                },
+        # Reuse the existing Invitation model: invited_email = target's email.
+        # Differs from /invite only in that we skip sending an outbound email
+        # (the recipient is a registered user, gets the in-app notification).
+        existing = Invitation.objects.filter(
+            team=team,
+            invited_email__iexact=target.email,
+            status=Invitation.Status.PENDING,
+            expires_at__gt=timezone.now(),
+        ).first()
+        if existing is not None:
+            return Response(
+                {"detail": "Invitation already pending for this person."},
+                status=400,
             )
-        return Response(MemberSerializer(membership).data, status=201)
+
+        invitation = Invitation.objects.create(
+            team=team,
+            invited_email=target.email,
+            invited_by=request.user,
+            role_on_accept=role,
+        )
+
+        # In-app notification only — no email channel.
+        notify(
+            target,
+            Notification.Type.TEAM_INVITATION_SENT,
+            {
+                "team_id": team.pk,
+                "team_name": team.name,
+                "inviter_email": request.user.email,
+                "invitation_id": invitation.pk,
+                "invitation_token": invitation.token,
+                "role_on_accept": invitation.role_on_accept,
+            },
+            send_email=False,
+        )
+        return Response({"detail": "Invitation sent.", "id": invitation.pk}, status=201)
 
     @action(
         detail=True,

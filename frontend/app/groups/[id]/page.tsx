@@ -6,13 +6,13 @@ import { useEffect, useState, type FormEvent } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { BackButton } from "@/components/BackButton";
 import { CardSkeleton, ListSkeleton, PageSkeleton } from "@/components/Skeleton";
-import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
+import { Button, FormError, FormSuccess, Input, Label, Select } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import {
-  addConnectionToTeam,
   cancelInvitation,
   deleteTeam,
   getTeam,
+  inviteConnectionToTeam,
   inviteToTeam,
   leaveTeam,
   removeMember,
@@ -104,6 +104,8 @@ export default function TeamDetailPage() {
         {team.description && <p className="text-sm text-zinc-600 dark:text-zinc-400">{team.description}</p>}
       </div>
 
+      {amAdmin && <SettingsCard team={team} onSaved={refresh} />}
+
       <RosterCard
         team={team}
         meId={me.id}
@@ -113,10 +115,9 @@ export default function TeamDetailPage() {
 
       {amAdmin && (
         <>
-          <AddFromConnectionsCard team={team} onChanged={refresh} />
-          <InviteCard teamId={teamId} onInvited={refresh} />
           <PendingInvitations team={team} onChanged={refresh} />
-          <SettingsCard team={team} onSaved={refresh} />
+          <InviteConnectionsCard team={team} onChanged={refresh} />
+          <InviteCard teamId={teamId} onInvited={refresh} />
         </>
       )}
 
@@ -238,7 +239,7 @@ function RosterCard({
   );
 }
 
-function AddFromConnectionsCard({
+function InviteConnectionsCard({
   team,
   onChanged,
 }: {
@@ -253,8 +254,18 @@ function AddFromConnectionsCard({
     try {
       const g = await listPeople();
       const memberIds = new Set(team.members.map((m) => m.user_id));
+      const pendingEmails = new Set(
+        team.invitations
+          .filter((i) => i.status === "pending")
+          .map((i) => i.invited_email.toLowerCase()),
+      );
       setAvailable(
-        g.people.filter((p) => p.connection_id !== null && !memberIds.has(p.id)),
+        g.people.filter(
+          (p) =>
+            p.connection_id !== null
+            && !memberIds.has(p.id)
+            && !pendingEmails.has(p.email.toLowerCase()),
+        ),
       );
     } catch {
       setAvailable([]);
@@ -264,16 +275,16 @@ function AddFromConnectionsCard({
   useEffect(() => {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [team.id, team.member_count]);
+  }, [team.id, team.member_count, team.invitations.length]);
 
-  async function onAdd(p: Person) {
+  async function onInvite(p: Person) {
     setError(null);
     setBusyId(p.id);
     try {
-      await addConnectionToTeam(team.id, p.id);
+      await inviteConnectionToTeam(team.id, p.id);
       await onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Add failed");
+      setError(err instanceof Error ? err.message : "Invite failed");
     } finally {
       setBusyId(null);
     }
@@ -286,10 +297,10 @@ function AddFromConnectionsCard({
     <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <header className="mb-3">
         <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-          Add from your connections
+          Invite from your connections
         </h2>
         <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
-          People you&apos;re already connected to — click <strong>Add</strong> and they join instantly.
+          People you&apos;re connected to. They&apos;ll get an in-app invitation (no email) and join once they accept.
         </p>
       </header>
       <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -305,11 +316,11 @@ function AddFromConnectionsCard({
               </div>
               <button
                 type="button"
-                onClick={() => onAdd(p)}
+                onClick={() => onInvite(p)}
                 disabled={busyId === p.id}
                 className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
               >
-                {busyId === p.id ? "Adding…" : "Add"}
+                {busyId === p.id ? "Inviting…" : "Invite"}
               </button>
             </li>
           );
@@ -353,22 +364,22 @@ function InviteCard({ teamId, onInvited }: { teamId: number; onInvited: () => vo
         </p>
       </header>
       <form onSubmit={onSubmit} className="space-y-3">
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="name@example.com"
-          />
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value as TeamRole)}
-            className="h-10 rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-          >
-            <option value="member">Member</option>
-            <option value="admin">Admin</option>
-          </select>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
+          <div className="flex-1">
+            <Input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@example.com"
+            />
+          </div>
+          <div className="sm:w-32">
+            <Select value={role} onChange={(e) => setRole(e.target.value as TeamRole)}>
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+            </Select>
+          </div>
           <Button type="submit" disabled={submitting} className="sm:w-auto sm:px-6">
             {submitting ? "Sending…" : "Send invite"}
           </Button>
