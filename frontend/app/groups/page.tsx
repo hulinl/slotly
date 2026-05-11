@@ -3,14 +3,16 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { CardSkeleton, ListSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormError, Input, Label } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import {
   acceptInvitation,
+  addConnectionToTeam,
   createTeam,
+  inviteToTeam,
   listMyInvitations,
   listTeams,
   rejectInvitation,
@@ -18,6 +20,7 @@ import {
   type TeamSummary,
   TeamsApiError,
 } from "@/lib/teams";
+import { listPeople, type Person } from "@/lib/users";
 
 export default function TeamsListPage() {
   const router = useRouter();
@@ -179,18 +182,84 @@ function CreateTeamForm({
 }) {
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
+  const [connections, setConnections] = useState<Person[] | null>(null);
+  const [pickedIds, setPickedIds] = useState<Set<number>>(new Set());
+  const [emailDraft, setEmailDraft] = useState("");
+  const [emails, setEmails] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    listPeople()
+      .then((g) => setConnections(g.people.filter((p) => p.connection_id !== null)))
+      .catch(() => setConnections([]));
+  }, []);
+
+  function togglePicked(id: number) {
+    setPickedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function addEmail() {
+    const raw = emailDraft.trim().toLowerCase();
+    if (!raw) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+      setError("That doesn't look like a valid email.");
+      return;
+    }
+    if (emails.includes(raw)) {
+      setError("You already added that email.");
+      return;
+    }
+    setError(null);
+    setEmails((prev) => [...prev, raw]);
+    setEmailDraft("");
+  }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
+    setProgress("Creating group…");
     try {
       const t = await createTeam({ name, description: desc });
-      onCreated(t);
+      const failures: string[] = [];
+      let addedCount = 0;
+      let invitedCount = 0;
+      for (const userId of pickedIds) {
+        setProgress(`Adding connections (${addedCount + 1}/${pickedIds.size})…`);
+        try {
+          await addConnectionToTeam(t.id, userId);
+          addedCount += 1;
+        } catch (err) {
+          failures.push(err instanceof Error ? err.message : `user ${userId}`);
+        }
+      }
+      for (const email of emails) {
+        setProgress(`Sending invitations (${invitedCount + 1}/${emails.length})…`);
+        try {
+          await inviteToTeam(t.id, email);
+          invitedCount += 1;
+        } catch (err) {
+          failures.push(email + ": " + (err instanceof Error ? err.message : "failed"));
+        }
+      }
+      if (failures.length > 0) {
+        setError(`Group created. Some adds/invites failed: ${failures.join("; ")}`);
+        setProgress(null);
+        // Still call onCreated so the new group shows up in the list.
+        onCreated({ ...t, member_count: 1 + addedCount });
+        return;
+      }
+      onCreated({ ...t, member_count: 1 + addedCount });
     } catch (err) {
       setError(err instanceof TeamsApiError ? err.message : "Create failed");
+      setProgress(null);
     } finally {
       setSubmitting(false);
     }
@@ -206,16 +275,117 @@ function CreateTeamForm({
           required
           value={name}
           onChange={(e) => setName(e.target.value)}
+          placeholder="Family, Work, Project X…"
         />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="team-desc">Description (optional)</Label>
         <Input id="team-desc" value={desc} onChange={(e) => setDesc(e.target.value)} />
       </div>
+
+      <div className="space-y-1.5">
+        <Label>
+          Add from your connections{" "}
+          {pickedIds.size > 0 && (
+            <span className="text-xs font-normal text-zinc-500">({pickedIds.size} picked)</span>
+          )}
+        </Label>
+        {connections === null ? (
+          <p className="text-sm text-zinc-500">Loading…</p>
+        ) : connections.length === 0 ? (
+          <p className="rounded-md border border-dashed border-zinc-300 px-3 py-2 text-xs text-zinc-500 dark:border-zinc-700">
+            No accepted connections yet. Use the email field below, or add people on{" "}
+            <Link href="/people" className="underline">
+              People
+            </Link>{" "}
+            first.
+          </p>
+        ) : (
+          <ul className="max-h-48 divide-y divide-zinc-100 overflow-y-auto rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+            {connections.map((p) => {
+              const fullName = `${p.first_name} ${p.last_name}`.trim() || p.email;
+              return (
+                <li key={p.id} className="flex items-center gap-2 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    id={`pick-${p.id}`}
+                    checked={pickedIds.has(p.id)}
+                    onChange={() => togglePicked(p.id)}
+                    className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 dark:border-zinc-700 dark:bg-zinc-900"
+                  />
+                  <label htmlFor={`pick-${p.id}`} className="flex-1 cursor-pointer text-sm">
+                    <span className="font-medium">{fullName}</span>
+                    <span className="ml-2 text-xs text-zinc-500">{p.email}</span>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <p className="text-xs text-zinc-500">
+          Connections are added directly — no email invitation needed.
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="invite-email">Invite by email (optional)</Label>
+        <div className="flex gap-2">
+          <Input
+            id="invite-email"
+            type="email"
+            value={emailDraft}
+            onChange={(e) => setEmailDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addEmail();
+              }
+            }}
+            placeholder="name@example.com"
+          />
+          <button
+            type="button"
+            onClick={addEmail}
+            className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            Add
+          </button>
+        </div>
+        {emails.length > 0 && (
+          <ul className="flex flex-wrap gap-1.5">
+            {emails.map((em) => (
+              <li
+                key={em}
+                className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs dark:bg-zinc-800"
+              >
+                {em}
+                <button
+                  type="button"
+                  onClick={() => setEmails((prev) => prev.filter((x) => x !== em))}
+                  aria-label={`Remove ${em}`}
+                  className="text-zinc-500 hover:text-red-600"
+                >
+                  <X size={12} aria-hidden />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {progress && !error && (
+        <p className="rounded-md bg-zinc-100 px-3 py-2 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
+          {progress}
+        </p>
+      )}
       <FormError message={error} />
       <div className="flex gap-2">
         <Button type="submit" disabled={submitting} className="sm:w-auto sm:px-4">
-          {submitting ? "Creating…" : "Create group"}
+          {submitting
+            ? "Creating…"
+            : pickedIds.size + emails.length > 0
+              ? `Create with ${pickedIds.size + emails.length} ${pickedIds.size + emails.length === 1 ? "person" : "people"}`
+              : "Create group"}
         </Button>
         <button
           type="button"

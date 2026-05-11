@@ -209,6 +209,89 @@ class TeamViewSet(ModelViewSet):
             )
         return Response({"detail": "Invitation sent.", "id": invitation.id}, status=201)
 
+    @action(detail=True, methods=["post"], url_path="add-connection")
+    def add_connection(self, request: Request, pk: int | None = None) -> Response:
+        """
+        POST /api/teams/<id>/add-connection
+            body: { user_id, role? }
+
+        Add an existing **accepted connection** directly as a member —
+        no invitation email round-trip needed because they already
+        opted in to share visibility via the Connection model (M22).
+
+        Validates: caller is admin of the team, target is an accepted
+        connection of caller, target is not already a member. Any
+        pending invitation for this person is auto-cancelled (the
+        direct add supersedes it).
+        """
+        from apps.connections.models import Connection
+
+        team = self.get_object()
+        denied = _ensure_admin_or_403(request.user, team)
+        if denied:
+            return denied
+
+        try:
+            user_id = int(request.data.get("user_id") or 0)
+        except (TypeError, ValueError):
+            return Response({"user_id": "Required (int)."}, status=400)
+        if not user_id:
+            return Response({"user_id": "Required."}, status=400)
+        if user_id == request.user.pk:
+            return Response({"user_id": "Cannot add yourself."}, status=400)
+
+        role = (request.data.get("role") or Membership.Role.MEMBER).strip()
+        if role not in {Membership.Role.MEMBER, Membership.Role.ADMIN}:
+            return Response({"role": "Must be 'member' or 'admin'."}, status=400)
+
+        target = User.objects.filter(pk=user_id).first()
+        if target is None:
+            return Response({"user_id": "User not found."}, status=404)
+
+        if not Connection.are_connected(request.user.pk, target.pk):
+            return Response(
+                {"detail": "You can only add accepted connections directly."},
+                status=403,
+            )
+
+        if Membership.objects.filter(team=team, user=target).exists():
+            return Response({"detail": "Already a member of this group."}, status=400)
+
+        with transaction.atomic():
+            membership = Membership.objects.create(team=team, user=target, role=role)
+            # Supersede any outstanding email invitation for this user.
+            Invitation.objects.filter(
+                team=team,
+                invited_email__iexact=target.email,
+                status=Invitation.Status.PENDING,
+            ).update(status=Invitation.Status.ACCEPTED)
+
+        payload = {
+            "team_id": team.pk,
+            "team_name": team.name,
+            "added_by_email": request.user.email,
+        }
+        notify(target, Notification.Type.TEAM_MEMBER_ADDED, payload)
+        # Other admins (not the actor) see a 'someone joined' event so the
+        # in-group activity feel matches a normal invitation acceptance.
+        for am in (
+            Membership.objects.filter(team=team, role=Membership.Role.ADMIN)
+            .exclude(user_id=request.user.pk)
+            .exclude(user_id=target.pk)
+            .select_related("user")
+        ):
+            notify(
+                am.user,
+                Notification.Type.TEAM_MEMBER_JOINED,
+                {
+                    "team_id": team.pk,
+                    "team_name": team.name,
+                    "accepter_email": target.email,
+                    "member_email": target.email,
+                },
+            )
+        return Response(MemberSerializer(membership).data, status=201)
+
     @action(
         detail=True,
         methods=["delete"],

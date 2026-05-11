@@ -9,6 +9,7 @@ import { CardSkeleton, ListSkeleton, PageSkeleton } from "@/components/Skeleton"
 import { Button, FormError, FormSuccess, Input, Label } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import {
+  addConnectionToTeam,
   cancelInvitation,
   deleteTeam,
   getTeam,
@@ -22,6 +23,7 @@ import {
   type TeamDetail,
   type TeamRole,
 } from "@/lib/teams";
+import { listPeople, type Person } from "@/lib/users";
 
 export default function TeamDetailPage() {
   const params = useParams<{ id: string }>();
@@ -111,6 +113,7 @@ export default function TeamDetailPage() {
 
       {amAdmin && (
         <>
+          <AddFromConnectionsCard team={team} onChanged={refresh} />
           <InviteCard teamId={teamId} onInvited={refresh} />
           <PendingInvitations team={team} onChanged={refresh} />
           <SettingsCard team={team} onSaved={refresh} />
@@ -231,6 +234,88 @@ function RosterCard({
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+function AddFromConnectionsCard({
+  team,
+  onChanged,
+}: {
+  team: TeamDetail;
+  onChanged: () => void;
+}) {
+  const [available, setAvailable] = useState<Person[] | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function refresh() {
+    try {
+      const g = await listPeople();
+      const memberIds = new Set(team.members.map((m) => m.user_id));
+      setAvailable(
+        g.people.filter((p) => p.connection_id !== null && !memberIds.has(p.id)),
+      );
+    } catch {
+      setAvailable([]);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [team.id, team.member_count]);
+
+  async function onAdd(p: Person) {
+    setError(null);
+    setBusyId(p.id);
+    try {
+      await addConnectionToTeam(team.id, p.id);
+      await onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Add failed");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (available === null) return null;
+  if (available.length === 0) return null;
+
+  return (
+    <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <header className="mb-3">
+        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+          Add from your connections
+        </h2>
+        <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
+          People you&apos;re already connected to — click <strong>Add</strong> and they join instantly.
+        </p>
+      </header>
+      <ul className="divide-y divide-zinc-100 dark:divide-zinc-800">
+        {available.map((p) => {
+          const fullName = `${p.first_name} ${p.last_name}`.trim() || p.email;
+          return (
+            <li key={p.id} className="flex items-center gap-3 py-2">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                  {fullName}
+                </p>
+                <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{p.email}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onAdd(p)}
+                disabled={busyId === p.id}
+                className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                {busyId === p.id ? "Adding…" : "Add"}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      <FormError message={error} />
     </section>
   );
 }

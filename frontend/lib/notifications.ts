@@ -4,6 +4,7 @@ export const NOTIFICATION_EVENTS = [
   "team.invitation_sent",
   "team.invitation_accepted",
   "team.invitation_rejected",
+  "team.member_added",
   "team.member_joined",
   "team.member_left",
   "team.member_removed",
@@ -91,6 +92,7 @@ export function renderNotification(n: Notification): RenderedNotification {
     accepter_email?: string;
     rejecter_email?: string;
     member_email?: string;
+    added_by_email?: string;
     calendar_name?: string;
     from_email?: string;
     by_email?: string;
@@ -110,6 +112,11 @@ export function renderNotification(n: Notification): RenderedNotification {
     case "team.invitation_rejected":
       return {
         text: `${p.rejecter_email ?? "Someone"} declined your invitation to “${p.team_name ?? "a team"}”.`,
+        href: teamLink,
+      };
+    case "team.member_added":
+      return {
+        text: `${p.added_by_email ?? "Someone"} added you to “${p.team_name ?? "a group"}”.`,
         href: teamLink,
       };
     case "team.member_joined":
@@ -160,6 +167,7 @@ export const EVENT_LABELS: Record<NotificationEvent, string> = {
   "team.invitation_sent": "You were invited to a team",
   "team.invitation_accepted": "Your invitation was accepted",
   "team.invitation_rejected": "Your invitation was declined",
+  "team.member_added": "You were added to a group directly",
   "team.member_joined": "A new member joined a team",
   "team.member_left": "A member left a team",
   "team.member_removed": "You were removed from a team",

@@ -18,6 +18,7 @@ class Notification(models.Model):
         TEAM_INVITATION_SENT = "team.invitation_sent", "You were invited to a team"
         TEAM_INVITATION_ACCEPTED = "team.invitation_accepted", "Your invitation was accepted"
         TEAM_INVITATION_REJECTED = "team.invitation_rejected", "Your invitation was rejected"
+        TEAM_MEMBER_ADDED = "team.member_added", "You were added to a group"
         TEAM_MEMBER_JOINED = "team.member_joined", "Someone joined the team"
         TEAM_MEMBER_LEFT = "team.member_left", "Someone left the team"
         TEAM_MEMBER_REMOVED = "team.member_removed", "You were removed from a team"

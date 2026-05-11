@@ -125,6 +125,17 @@ export const inviteToTeam = (teamId: number, email: string, role: TeamRole = "me
     body: JSON.stringify({ email, role }),
   });
 
+/** Add an accepted connection directly to the group (no invitation email). */
+export const addConnectionToTeam = (
+  teamId: number,
+  userId: number,
+  role: TeamRole = "member",
+) =>
+  request<TeamMember>(`/api/teams/${teamId}/add-connection`, {
+    method: "POST",
+    body: JSON.stringify({ user_id: userId, role }),
+  });
+
 export const cancelInvitation = (teamId: number, invitationId: number) =>
   request<void>(`/api/teams/${teamId}/invitations/${invitationId}`, { method: "DELETE" });
 
