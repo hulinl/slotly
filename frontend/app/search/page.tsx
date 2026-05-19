@@ -420,17 +420,33 @@ function SearchForm({
   } | null>(null);
   const [holidays, setHolidays] = useState<Map<string, string>>(new Map());
 
-  // Load team detail (member roster) whenever the team changes. If no
-  // explicit selection seed was provided (e.g. user just opened the page),
-  // default to "everyone in the team".
+  // Load team detail (member roster) whenever the team changes, then decide
+  // what `selected` should be:
+  //  - opened the page with no explicit seed → all members
+  //  - user switched to a different team from the dropdown → all members
+  //  - seed had explicit member_ids (saved/recent search) → keep them, but
+  //    drop anyone no longer on the team's roster. Otherwise the backend
+  //    400s with "Some users are not members of this team" — happens when
+  //    a teammate was removed after the search was captured.
   useEffect(() => {
     setTeam(null);
     let cancelled = false;
     getTeam(teamId).then((t) => {
       if (cancelled) return;
       setTeam(t);
-      if (initialSeed.selectedIds === null && teamId === initialSeed.teamId) {
-        setSelected(new Set(t.members.map((m) => m.user_id)));
+      const teamUserIds = new Set(t.members.map((m) => m.user_id));
+      const switchedTeam = teamId !== initialSeed.teamId;
+      const useDefaults = switchedTeam || initialSeed.selectedIds === null;
+      if (useDefaults) {
+        setSelected(teamUserIds);
+      } else {
+        setSelected((prev) => {
+          const pruned = new Set<number>();
+          for (const id of prev) {
+            if (teamUserIds.has(id)) pruned.add(id);
+          }
+          return pruned;
+        });
       }
     });
     return () => {
