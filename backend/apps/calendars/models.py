@@ -49,12 +49,32 @@ class Calendar(models.Model):
     last_etag = models.CharField(max_length=400, blank=True)
     last_modified = models.CharField(max_length=200, blank=True)
 
+    # Bridge: republish this calendar with timezone normalization so providers
+    # that don't honor Windows TZIDs (e.g. Google Calendar) display correct
+    # times. When enabled, GET /ics/<bridge_token>.ics fetches the source URL,
+    # rewrites TZIDs and VTIMEZONE to IANA, and serves the result publicly.
+    # Anyone with the token can read the calendar — treat as a shared secret.
+    bridge_enabled = models.BooleanField(default=False)
+    bridge_token = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    # IANA timezone name (e.g. "Europe/Prague"). Empty = use Europe/Prague as a
+    # safe default, since the country field on the user model is CZ by default.
+    source_timezone = models.CharField(max_length=64, blank=True, default="")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ("-created_at",)
         indexes = [models.Index(fields=("owner", "include_in_busy"))]
+        constraints = [
+            # Only enforce uniqueness when a token is actually set, so empty
+            # default values don't collide across rows.
+            models.UniqueConstraint(
+                fields=("bridge_token",),
+                condition=~models.Q(bridge_token=""),
+                name="calendar_bridge_token_unique_when_set",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.name} ({self.owner_id})"

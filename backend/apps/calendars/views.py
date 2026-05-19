@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import secrets
+
+from django.core.cache import cache
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -57,7 +60,7 @@ class CalendarViewSet(ModelViewSet):
             sync_calendar(calendar)
         calendar.refresh_from_db()
         return Response(
-            CalendarReadSerializer(calendar).data,
+            CalendarReadSerializer(calendar, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
         )
 
@@ -66,7 +69,7 @@ class CalendarViewSet(ModelViewSet):
         calendar = self.get_object()
         result = sync_calendar(calendar)
         calendar.refresh_from_db()
-        body = CalendarReadSerializer(calendar).data
+        body = CalendarReadSerializer(calendar, context={"request": request}).data
         body["sync"] = {
             "status_code": result.status_code,
             "fetched": result.fetched,
@@ -75,6 +78,31 @@ class CalendarViewSet(ModelViewSet):
             "notes": result.notes,
         }
         return Response(body)
+
+    @action(detail=True, methods=["post"], url_path="rotate-bridge-token")
+    def rotate_bridge_token(self, request: Request, pk: int | None = None) -> Response:
+        """
+        Issue a fresh bridge_token, invalidating the previous one. Use when a
+        user suspects the bridge URL leaked. The body cache for the old token
+        is dropped immediately so a stale CDN-style hit can't keep serving.
+        """
+        calendar = self.get_object()
+        if not calendar.bridge_enabled:
+            return Response(
+                {"detail": "Bridge is not enabled on this calendar."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        old_token = calendar.bridge_token
+        calendar.bridge_token = secrets.token_urlsafe(24)
+        calendar.save(update_fields=["bridge_token", "updated_at"])
+        if old_token:
+            try:
+                cache.delete_many([f"bridge:body:{old_token}", f"bridge:rl:{old_token}"])
+            except Exception:
+                pass
+        return Response(
+            CalendarReadSerializer(calendar, context={"request": request}).data,
+        )
 
     @action(detail=False, methods=["post"], url_path="sync-all")
     def sync_all_mine(self, request: Request) -> Response:

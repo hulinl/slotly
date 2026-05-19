@@ -3,7 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { AlertTriangle, ChevronDown, ExternalLink, HelpCircle } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronDown,
+  Copy,
+  ExternalLink,
+  HelpCircle,
+  RefreshCw,
+  Share2,
+} from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { SettingsNav } from "@/components/SettingsNav";
 import { ProviderBadge } from "@/components/ProviderBadge";
@@ -17,7 +25,9 @@ import {
   createCalendar,
   deleteCalendar,
   listCalendars,
+  rotateBridgeToken,
   syncCalendar,
+  updateCalendar,
 } from "@/lib/calendars";
 
 const PROVIDER_LABEL: Record<CalendarProvider, string> = {
@@ -533,6 +543,242 @@ function CalendarRow({
         </div>
       </div>
       {error && <p className="mt-3 text-xs text-red-600 dark:text-red-300">{error}</p>}
+      <BridgeSection calendar={calendar} onUpdated={onUpdated} />
     </article>
   );
+}
+
+// ---------------------------------------------------------------------------
+
+const COMMON_TIMEZONES = [
+  "Europe/Prague",
+  "Europe/Berlin",
+  "Europe/Vienna",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Warsaw",
+  "Europe/Budapest",
+  "Europe/Bucharest",
+  "Europe/Istanbul",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "UTC",
+];
+
+function BridgeSection({
+  calendar,
+  onUpdated,
+}: {
+  calendar: Calendar;
+  onUpdated: (c: Calendar) => void;
+}) {
+  const [open, setOpen] = useState(calendar.bridge_enabled);
+  const [busy, setBusy] = useState<"toggle" | "tz" | "rotate" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [tz, setTz] = useState(calendar.source_timezone || "Europe/Prague");
+
+  async function setEnabled(next: boolean) {
+    setError(null);
+    setBusy("toggle");
+    try {
+      const updated = await updateCalendar(calendar.id, {
+        bridge_enabled: next,
+        source_timezone: tz,
+      });
+      onUpdated(updated);
+      if (next) setOpen(true);
+    } catch (err) {
+      setError(extractErr(err, "Couldn't update bridge"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function saveTz(value: string) {
+    setError(null);
+    setTz(value);
+    if (!calendar.bridge_enabled) return;
+    setBusy("tz");
+    try {
+      const updated = await updateCalendar(calendar.id, { source_timezone: value });
+      onUpdated(updated);
+    } catch (err) {
+      setError(extractErr(err, "Couldn't save timezone"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onRotate() {
+    if (!confirm("Generate a new bridge URL? The old one will stop working immediately.")) return;
+    setError(null);
+    setBusy("rotate");
+    try {
+      onUpdated(await rotateBridgeToken(calendar.id));
+    } catch (err) {
+      setError(extractErr(err, "Couldn't rotate token"));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onCopy() {
+    if (!calendar.bridge_url) return;
+    try {
+      await navigator.clipboard.writeText(calendar.bridge_url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setError("Copy failed — select the URL manually.");
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50/60 dark:border-zinc-800 dark:bg-zinc-950/40">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium text-zinc-800 dark:text-zinc-100"
+      >
+        <Share2 size={16} className="shrink-0 text-indigo-600 dark:text-indigo-300" aria-hidden />
+        <span className="flex-1">Bridge to Google Calendar</span>
+        {calendar.bridge_enabled && (
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+            On
+          </span>
+        )}
+        <ChevronDown
+          size={16}
+          className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+          aria-hidden
+        />
+      </button>
+      {open && (
+        <div className="space-y-4 border-t border-zinc-200 px-4 py-4 dark:border-zinc-800">
+          <p className="text-sm text-zinc-700 dark:text-zinc-300">
+            Outlook&apos;s published feeds use Windows-style timezone names that
+            Google Calendar ignores, causing times to display shifted. Turn this
+            on and we&apos;ll re-serve the calendar with IANA timezones — paste
+            the resulting URL into Google&apos;s &quot;From URL&quot; option.
+          </p>
+
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+            <div className="space-y-1.5">
+              <Label htmlFor={`tz-${calendar.id}`}>Calendar timezone</Label>
+              <select
+                id={`tz-${calendar.id}`}
+                value={tz}
+                onChange={(e) => saveTz(e.target.value)}
+                disabled={busy !== null}
+                className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              >
+                {COMMON_TIMEZONES.includes(tz) ? null : <option value={tz}>{tz}</option>}
+                {COMMON_TIMEZONES.map((z) => (
+                  <option key={z} value={z}>
+                    {z}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={() => setEnabled(!calendar.bridge_enabled)}
+              disabled={busy !== null}
+              className={`h-9 rounded-md px-4 text-sm font-medium disabled:opacity-50 ${
+                calendar.bridge_enabled
+                  ? "border border-zinc-300 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  : "bg-indigo-600 text-white hover:bg-indigo-700"
+              }`}
+            >
+              {busy === "toggle"
+                ? "Saving…"
+                : calendar.bridge_enabled
+                  ? "Disable bridge"
+                  : "Enable bridge"}
+            </button>
+          </div>
+
+          {calendar.bridge_enabled && calendar.bridge_url && (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor={`bridge-url-${calendar.id}`}>Bridge URL (paste into Google)</Label>
+                <div className="flex gap-2">
+                  <input
+                    id={`bridge-url-${calendar.id}`}
+                    readOnly
+                    value={calendar.bridge_url}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-xs text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                  />
+                  <button
+                    type="button"
+                    onClick={onCopy}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    <Copy size={14} aria-hidden />
+                    {copied ? "Copied" : "Copy"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onRotate}
+                    disabled={busy !== null}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-zinc-300 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    <RefreshCw size={14} aria-hidden />
+                    {busy === "rotate" ? "…" : "Rotate"}
+                  </button>
+                </div>
+              </div>
+
+              <ol className="ml-5 list-decimal space-y-1 text-sm text-zinc-700 dark:text-zinc-300">
+                <li>
+                  Open{" "}
+                  <a
+                    href="https://calendar.google.com/calendar/u/0/r/settings/addbyurl"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-indigo-700 underline decoration-indigo-300 hover:decoration-indigo-500 dark:text-indigo-300 dark:decoration-indigo-700"
+                  >
+                    Google Calendar → Add from URL
+                  </a>
+                  .
+                </li>
+                <li>Paste the URL above and click <em>Add calendar</em>.</li>
+                <li>
+                  Wait up to 24 hours — Google refreshes external calendars
+                  slowly. Changes in Outlook won&apos;t appear immediately.
+                </li>
+              </ol>
+
+              <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden />
+                <p>
+                  Anyone with this URL can read the calendar — treat it like a
+                  password. Use <em>Rotate</em> if you ever paste it somewhere
+                  by mistake.
+                </p>
+              </div>
+            </>
+          )}
+
+          {error && <p className="text-xs text-red-600 dark:text-red-300">{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function extractErr(err: unknown, fallback: string): string {
+  if (err instanceof CalendarApiError) {
+    const fields = err.fields;
+    for (const v of Object.values(fields)) {
+      if (typeof v === "string") return v;
+      if (Array.isArray(v) && typeof v[0] === "string") return v[0];
+    }
+    return err.message || fallback;
+  }
+  return err instanceof Error ? err.message : fallback;
 }

@@ -2,6 +2,8 @@ from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
 
+from apps.calendars.public_views import bridge_ics
+
 
 def healthz(_request):
     return JsonResponse({"status": "ok", "service": "slotly-api"})
@@ -10,6 +12,9 @@ def healthz(_request):
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("healthz", healthz),
+    # Public ICS bridge — lives at the root (not /api/) because Google
+    # Calendar fetches it without authentication and expects a clean URL.
+    path("ics/<str:token>.ics", bridge_ics, name="bridge-ics"),
     path("_allauth/", include("allauth.headless.urls")),
     path("api/", include("apps.accounts.urls")),
     path("api/", include("apps.calendars.urls")),

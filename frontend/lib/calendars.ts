@@ -15,6 +15,12 @@ export type Calendar = {
   last_error: string;
   consecutive_failures: number;
   created_at: string;
+  /** When true, /ics/<token>.ics serves a Google-compatible rebroadcast. */
+  bridge_enabled: boolean;
+  /** Absolute /ics/<token>.ics URL when bridge_enabled, else null. */
+  bridge_url: string | null;
+  /** IANA timezone used as the default for floating/unknown TZIDs. */
+  source_timezone: string;
   /** Present on POST /api/calendars and POST /api/calendars/{id}/sync */
   sync?: {
     status_code: number;
@@ -29,6 +35,13 @@ export type CalendarCreateInput = {
   name: string;
   url: string;
   include_in_busy?: boolean;
+};
+
+export type CalendarUpdateInput = {
+  name?: string;
+  include_in_busy?: boolean;
+  bridge_enabled?: boolean;
+  source_timezone?: string;
 };
 
 export class CalendarApiError extends Error {
@@ -84,4 +97,17 @@ export function syncCalendar(id: number): Promise<Calendar> {
  * "syncing" state and flip to OK / sync_failing when the worker finishes. */
 export function syncAllMyCalendars(): Promise<{ queued: number }> {
   return request<{ queued: number }>(`/api/calendars/sync-all`, { method: "POST" });
+}
+
+export function updateCalendar(id: number, patch: CalendarUpdateInput): Promise<Calendar> {
+  return request<Calendar>(`/api/calendars/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+export function rotateBridgeToken(id: number): Promise<Calendar> {
+  return request<Calendar>(`/api/calendars/${id}/rotate-bridge-token`, {
+    method: "POST",
+  });
 }
