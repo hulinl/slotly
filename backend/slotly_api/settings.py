@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     "apps.search",
     "apps.notifications",
     "apps.connections",
+    "apps.scheduling",
 ]
 
 SITE_ID = 1
@@ -219,3 +220,29 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # --- Calendar URL encryption (used in milestone 3) ---
 CALENDAR_URL_ENCRYPTION_KEY = env("CALENDAR_URL_ENCRYPTION_KEY", default="")
+
+# --- Google Calendar OAuth (M18a) ---
+# Web-application OAuth 2.0 client from Google Cloud Console. The redirect
+# URI registered in GCC must match GOOGLE_OAUTH_REDIRECT_URI exactly. Empty
+# defaults are fine in dev when the booking flow isn't being exercised; the
+# connect endpoint surfaces a clear 503 when unconfigured.
+GOOGLE_OAUTH_CLIENT_ID = env("GOOGLE_OAUTH_CLIENT_ID", default="")
+GOOGLE_OAUTH_CLIENT_SECRET = env("GOOGLE_OAUTH_CLIENT_SECRET", default="")
+GOOGLE_OAUTH_REDIRECT_URI = env(
+    "GOOGLE_OAUTH_REDIRECT_URI",
+    default="http://localhost:8000/api/oauth/google/callback",
+)
+# After OAuth callback completes, the user is bounced back to the frontend.
+# Path is appended to FRONTEND_BASE_URL (defined in settings_prod.py for
+# production; here for dev). The query string carries a status flag the
+# frontend reads to render success/failure.
+GOOGLE_OAUTH_FRONTEND_RETURN = "/settings/integrations"
+FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:3000")
+# Requested scopes. Calendar.events is enough for events.insert + freeBusy;
+# avoid the broader calendar scope to keep the consent screen narrower.
+GOOGLE_OAUTH_SCOPES = [
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/calendar.freebusy",
+    "openid",
+    "email",
+]
