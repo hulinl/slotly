@@ -149,13 +149,28 @@ release() {
   acr_login_server=$(_outputs | jq -r '.acrLoginServer.value')
   local tag
   tag=$(cat "$SECRETS/last_tag")
+  local image="$acr_login_server/slotly-backend:$tag"
 
-  echo "==> Updating Container App $backend_name → $acr_login_server/slotly-backend:$tag"
+  echo "==> Updating Container App $backend_name → $image"
   az containerapp update \
     --resource-group "$RG" \
     --name "$backend_name" \
-    --image "$acr_login_server/slotly-backend:$tag" \
+    --image "$image" \
     --query 'properties.latestRevisionName' -o tsv
+
+  # Keep the periodic poll-calendars Job on the same image so the cron uses
+  # the latest code. Skip silently if the Job hasn't been provisioned yet
+  # (first-time release before `provision` ran with the new Bicep).
+  local job_name
+  job_name=$(_outputs | jq -r '.pollCalendarsJobName.value // empty')
+  if [[ -n "$job_name" ]] && az containerapp job show -g "$RG" -n "$job_name" >/dev/null 2>&1; then
+    echo "==> Updating Container Apps Job $job_name → $image"
+    az containerapp job update \
+      --resource-group "$RG" \
+      --name "$job_name" \
+      --image "$image" \
+      --query 'properties.template.containers[0].image' -o tsv
+  fi
 }
 
 migrate() {

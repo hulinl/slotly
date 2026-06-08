@@ -326,6 +326,86 @@ resource caBackend 'Microsoft.App/containerApps@2024-03-01' = {
 }
 
 // ===========================================================================
+// Container Apps Job — periodic ICS calendar polling (replaces Celery beat).
+// Cron every 5 minutes invokes `python manage.py poll_calendars`, which
+// iterates every Calendar with include_in_busy=true and refreshes its events.
+// Image is kept in lockstep with caBackend via deploy.sh release.
+// ===========================================================================
+resource jobPollCalendars 'Microsoft.App/jobs@2024-03-01' = {
+  name: 'slotly-poll-calendars'
+  location: location
+  properties: {
+    environmentId: caEnv.id
+    configuration: {
+      triggerType: 'Schedule'
+      scheduleTriggerConfig: {
+        cronExpression: '*/5 * * * *'
+        parallelism: 1
+        replicaCompletionCount: 1
+      }
+      replicaTimeout: 240  // 4min; well under the 5min cron interval
+      replicaRetryLimit: 1
+      registries: [
+        {
+          server: acr.properties.loginServer
+          username: acr.listCredentials().username
+          passwordSecretRef: 'acr-password'
+        }
+      ]
+      secrets: [
+        {
+          name: 'acr-password'
+          value: acr.listCredentials().passwords[0].value
+        }
+        {
+          name: 'django-secret'
+          value: djangoSecretKey
+        }
+        {
+          name: 'pg-url'
+          value: 'postgres://${postgresAdmin}:${postgresPassword}@${postgres.properties.fullyQualifiedDomainName}:5432/${postgresDatabase}?sslmode=require'
+        }
+        {
+          name: 'cal-key'
+          value: calendarUrlEncryptionKey
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          name: 'poll-calendars'
+          image: backendInitialImage
+          command: [
+            'python'
+            'manage.py'
+            'poll_calendars'
+          ]
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+          env: [
+            { name: 'DJANGO_SETTINGS_MODULE', value: 'slotly_api.settings_prod' }
+            { name: 'DJANGO_DEBUG', value: 'False' }
+            { name: 'DJANGO_ALLOWED_HOSTS', value: 'api.slotly.team,${caBackendName}.${caEnv.properties.defaultDomain}' }
+            { name: 'DJANGO_SECURE_SSL_REDIRECT', value: 'False' }
+            { name: 'DJANGO_SECRET_KEY', secretRef: 'django-secret' }
+            { name: 'DATABASE_URL', secretRef: 'pg-url' }
+            { name: 'CALENDAR_URL_ENCRYPTION_KEY', secretRef: 'cal-key' }
+            { name: 'DEFAULT_FROM_EMAIL', value: 'noreply@slotly.team' }
+          ]
+        }
+      ]
+    }
+  }
+  dependsOn: [
+    pgDatabase
+    pgFirewallAzure
+  ]
+}
+
+// ===========================================================================
 // Static Web Apps (Free tier — frontend)
 // Only created when a GitHub token is provided. Otherwise we'll create it
 // separately after capturing the token (e.g. via az staticwebapp create).
@@ -507,6 +587,8 @@ output acrName string = acr.name
 
 output backendFqdn string = caBackend.properties.configuration.ingress.fqdn
 output backendName string = caBackend.name
+
+output pollCalendarsJobName string = jobPollCalendars.name
 
 output staticWebHost string = empty(githubToken) ? '' : swa.properties.defaultHostname
 output staticWebName string = empty(githubToken) ? '' : swa.name
