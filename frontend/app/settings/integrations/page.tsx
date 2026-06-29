@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, Plug, Unplug } from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { SettingsNav } from "@/components/SettingsNav";
@@ -14,7 +14,24 @@ import {
   type GoogleAccountStatus,
 } from "@/lib/google";
 
+// useSearchParams() forces this subtree out of static prerendering; Next.js 16
+// requires it to live below a Suspense boundary so the prerender of the rest
+// of the route can still succeed.
 export default function IntegrationsPage() {
+  return (
+    <Suspense
+      fallback={
+        <PageSkeleton>
+          <CardSkeleton rows={3} />
+        </PageSkeleton>
+      }
+    >
+      <IntegrationsContent />
+    </Suspense>
+  );
+}
+
+function IntegrationsContent() {
   const router = useRouter();
   const params = useSearchParams();
   const [email, setEmail] = useState<string>("");
