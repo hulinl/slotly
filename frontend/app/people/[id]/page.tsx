@@ -44,7 +44,6 @@ export default function TeammateProfilePage() {
 
   const [availability, setAvailability] = useState<PublicProfileResponse | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [searching, setSearching] = useState(false);
 
   const [showIntersection, setShowIntersection] = useState(false);
   const [intersectionSlots, setIntersectionSlots] = useState<Slot[] | null>(null);
@@ -86,14 +85,12 @@ export default function TeammateProfilePage() {
       setAvailability(null);
       return;
     }
-    setSearching(true);
     setSearchError(null);
     getTeammateAvailability(user.id)
       .then(setAvailability)
       .catch((err) =>
         setSearchError(err instanceof Error ? err.message : "Couldn't load availability."),
-      )
-      .finally(() => setSearching(false));
+      );
   }, [user, isMe]);
 
   const ownSlots = useMemo(() => {
@@ -134,9 +131,6 @@ export default function TeammateProfilePage() {
 
   const displayedSlots = showIntersection ? intersectionSlots ?? [] : ownSlots;
   const displayedError = showIntersection ? intersectionError : searchError;
-  const displayedLoading = showIntersection
-    ? intersectionLoading && intersectionSlots === null
-    : searching && !availability;
 
   if (!meEmail) {
     return (
@@ -222,49 +216,40 @@ export default function TeammateProfilePage() {
                 {showIntersection ? ` · ${INTERSECTION_DURATION_MIN}-min slots` : ""} · use ‹ › to navigate
               </p>
             </header>
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                  Show overlap with my calendar
-                </p>
-                <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                  Only times when both of you are free (min {INTERSECTION_DURATION_MIN} min).
-                </p>
-              </div>
+            <label className="flex items-center justify-end gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+              <span>Show only times we're both free (min {INTERSECTION_DURATION_MIN} min)</span>
+              {intersectionLoading && (
+                <span className="text-[10px] text-zinc-400">loading…</span>
+              )}
               <button
                 type="button"
                 role="switch"
                 aria-checked={showIntersection}
                 onClick={() => setShowIntersection((v) => !v)}
-                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900 ${
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-950 ${
                   showIntersection
                     ? "bg-indigo-600"
                     : "bg-zinc-300 dark:bg-zinc-700"
                 }`}
               >
                 <span
-                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                    showIntersection ? "translate-x-[22px]" : "translate-x-0.5"
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                    showIntersection ? "translate-x-[18px]" : "translate-x-0.5"
                   }`}
                 />
               </button>
-            </div>
+            </label>
             {displayedError && <FormError message={displayedError} />}
-            {displayedLoading ? (
+            {!availability ? (
               <CardSkeleton rows={6} />
-            ) : displayedSlots.length > 0 ? (
+            ) : (
               <SlotsCalendar
                 slots={displayedSlots}
                 durationMin={showIntersection ? INTERSECTION_DURATION_MIN : 30}
                 holidays={holidays}
                 workingHoursRange={workingHoursRangeFromHours(user.working_hours)}
+                stickyView
               />
-            ) : (
-              <section className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
-                {showIntersection
-                  ? `No ${INTERSECTION_DURATION_MIN}-min slot when both of you are free over the next 8 weeks.`
-                  : "No free time in the upcoming weeks."}
-              </section>
             )}
             <div className="flex justify-end">
               <Link href="/search">

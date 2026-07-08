@@ -9,7 +9,7 @@
  * 33 stacked tiles.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import type { Slot } from "@/lib/search";
 
@@ -50,6 +50,7 @@ export function SlotsCalendar({
   workingHoursRange,
   unavailabilityBlocks,
   onDeleteUnavailability,
+  stickyView = false,
 }: {
   slots: Slot[];
   durationMin: number;
@@ -68,6 +69,11 @@ export function SlotsCalendar({
    * a band confirms then deletes. */
   unavailabilityBlocks?: UnavailabilityBlock[];
   onDeleteUnavailability?: (id: number) => void | Promise<void>;
+  /** When true, auto-anchor fires only on the first non-empty slot load —
+   * subsequent slot changes (e.g. a parent-level filter toggle) leave the
+   * user's current viewStart untouched. Default false keeps the existing
+   * "jump to first result on every change" behavior for pages like /search. */
+  stickyView?: boolean;
 }) {
   const intervalsByDay = useMemo(() => groupAndMerge(slots), [slots]);
   const blocksByDay = useMemo(
@@ -104,11 +110,15 @@ export function SlotsCalendar({
   );
   const [viewStart, setViewStart] = useState<Date>(() => startOfPeriod(new Date(), 7));
 
-  // If new search results arrive, only hop the calendar when the user's
-  // current view has nothing to show. Keeps navigation stable when a filter
-  // toggle swaps the slot set but the current week still has slots in both.
+  // Anchor viewStart to the first slot's period on data load. In sticky mode
+  // this fires exactly once (the first non-empty payload) — good for pages
+  // like /people/<id> where a filter toggle swaps the slot set and the user
+  // wants to stay on whatever week they'd navigated to.
+  const anchoredRef = useRef(false);
   useEffect(() => {
     if (sortedDayKeys.length === 0) return;
+    if (stickyView && anchoredRef.current) return;
+    anchoredRef.current = true;
     setViewStart((prev) => {
       const visibleKeys = new Set(
         Array.from({ length: viewDays }, (_, i) => toDayKey(addDays(prev, i))),
@@ -116,7 +126,7 @@ export function SlotsCalendar({
       if (sortedDayKeys.some((k) => visibleKeys.has(k))) return prev;
       return startOfPeriod(parseDayKey(sortedDayKeys[0]), viewDays);
     });
-  }, [sortedDayKeys, viewDays]);
+  }, [sortedDayKeys, viewDays, stickyView]);
 
   // When the viewDays changes (toggle clicked or screen resize), re-anchor
   // viewStart so the visible range still includes "today" if we were on it.
@@ -230,10 +240,10 @@ export function SlotsCalendar({
             </>
           )}
           <span className="font-normal text-zinc-600 dark:text-zinc-400">{rangeLabel}</span>
-          {totalSlotsThisView === 0 && (
-            <span className="ml-2 text-xs text-zinc-500">no slots</span>
-          )}
         </h3>
+        {totalSlotsThisView === 0 && (
+          <p className="basis-full text-right text-xs text-zinc-500">no free slots in this view</p>
+        )}
       </header>
 
       {/* day headers */}
