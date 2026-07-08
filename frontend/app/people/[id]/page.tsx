@@ -222,15 +222,33 @@ export default function TeammateProfilePage() {
                 {showIntersection ? ` · ${INTERSECTION_DURATION_MIN}-min slots` : ""} · use ‹ › to navigate
               </p>
             </header>
-            <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
-              <input
-                type="checkbox"
-                checked={showIntersection}
-                onChange={(e) => setShowIntersection(e.target.checked)}
-                className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 dark:border-zinc-600 dark:bg-zinc-800"
-              />
-              Show overlap with my calendar (min {INTERSECTION_DURATION_MIN}-min slots)
-            </label>
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+                  Show overlap with my calendar
+                </p>
+                <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  Only times when both of you are free (min {INTERSECTION_DURATION_MIN} min).
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={showIntersection}
+                onClick={() => setShowIntersection((v) => !v)}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-900 ${
+                  showIntersection
+                    ? "bg-indigo-600"
+                    : "bg-zinc-300 dark:bg-zinc-700"
+                }`}
+              >
+                <span
+                  className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                    showIntersection ? "translate-x-[22px]" : "translate-x-0.5"
+                  }`}
+                />
+              </button>
+            </div>
             {displayedError && <FormError message={displayedError} />}
             {displayedLoading ? (
               <CardSkeleton rows={6} />

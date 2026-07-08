@@ -104,12 +104,18 @@ export function SlotsCalendar({
   );
   const [viewStart, setViewStart] = useState<Date>(() => startOfPeriod(new Date(), 7));
 
-  // If new search results arrive, hop the calendar back to the period that
-  // contains any of them.
+  // If new search results arrive, only hop the calendar when the user's
+  // current view has nothing to show. Keeps navigation stable when a filter
+  // toggle swaps the slot set but the current week still has slots in both.
   useEffect(() => {
-    if (sortedDayKeys.length > 0) {
-      setViewStart(startOfPeriod(parseDayKey(sortedDayKeys[0]), viewDays));
-    }
+    if (sortedDayKeys.length === 0) return;
+    setViewStart((prev) => {
+      const visibleKeys = new Set(
+        Array.from({ length: viewDays }, (_, i) => toDayKey(addDays(prev, i))),
+      );
+      if (sortedDayKeys.some((k) => visibleKeys.has(k))) return prev;
+      return startOfPeriod(parseDayKey(sortedDayKeys[0]), viewDays);
+    });
   }, [sortedDayKeys, viewDays]);
 
   // When the viewDays changes (toggle clicked or screen resize), re-anchor
