@@ -8,6 +8,7 @@ from .views import (
     PeerAvailabilityView,
     PublicProfileView,
     RegenerateShareTokenView,
+    TeammateAvailabilityView,
     TeammateView,
     TeammatesIndexView,
 )
@@ -23,6 +24,7 @@ urlpatterns = [
     path("me/delete", DeleteMeView.as_view(), name="me-delete"),
     path("users", TeammatesIndexView.as_view(), name="teammate-index"),
     path("users/<int:pk>", TeammateView.as_view(), name="teammate"),
+    path("users/<int:user_id>/availability", TeammateAvailabilityView.as_view(), name="teammate-availability"),
     path("holidays", HolidaysView.as_view(), name="holidays"),
     path("public/profile/<uuid:token>", PublicProfileView.as_view(), name="public-profile"),
 ]

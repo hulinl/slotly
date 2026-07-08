@@ -270,6 +270,85 @@ def _parse_iso_datetime(value: str):
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
+class TeammateAvailabilityView(APIView):
+    """
+    GET /api/users/<user_id>/availability?from=YYYY-MM-DD&to=YYYY-MM-DD
+
+    Same shape as /api/me/availability, but for a peer. Renders the *peer's*
+    own free time (working_hours minus their busy) — not an intersection with
+    the caller. Powers /people/<id> so a teammate sees the same view the
+    person sees when they open /profile themselves.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request, user_id: int) -> Response:
+        from django.db.models import Q as _Q
+
+        peer = get_object_or_404(User, pk=user_id)
+
+        shared = Team.objects.filter(memberships__user=request.user).filter(
+            memberships__user=peer,
+        ).exists()
+        from apps.connections.models import Connection as _Connection
+        connected = _Connection.are_connected(request.user.pk, peer.pk)
+        if not (shared or connected or peer.share_enabled):
+            return Response(
+                {
+                    "detail": (
+                        "You're not connected to this user, don't share a group, "
+                        "and their profile isn't public."
+                    ),
+                },
+                status=403,
+            )
+
+        from_param = request.query_params.get("from")
+        to_param = request.query_params.get("to")
+        now = timezone.now()
+        try:
+            window_start = (
+                _parse_iso_date(from_param) if from_param else now.replace(
+                    hour=0, minute=0, second=0, microsecond=0,
+                )
+            )
+            window_end = (
+                _parse_iso_date(to_param) if to_param else window_start + timedelta(days=56)
+            )
+        except ValueError:
+            return Response({"detail": "Invalid date format; expected YYYY-MM-DD."}, status=400)
+        if window_end <= window_start:
+            return Response({"detail": "to must be after from."}, status=400)
+        if (window_end - window_start) > timedelta(days=84):
+            window_end = window_start + timedelta(days=84)
+
+        busy: list[tuple] = []
+        for ev in CalendarEvent.objects.filter(
+            _Q(transp=CalendarEvent.Transparency.OPAQUE) | _Q(is_all_day=True),
+            calendar__owner_id=peer.pk,
+            calendar__include_in_busy=True,
+            dtstart__lt=window_end,
+            dtend__gt=window_start,
+        ).exclude(status=CalendarEvent.Status.CANCELLED).values("dtstart", "dtend"):
+            busy.append((ev["dtstart"], ev["dtend"]))
+        for u in Unavailability.objects.filter(
+            user_id=peer.pk,
+            starts_at__lt=window_end,
+            ends_at__gt=window_start,
+        ).values("starts_at", "ends_at"):
+            busy.append((u["starts_at"], u["ends_at"]))
+
+        return Response({
+            "profile": PublicProfileSerializer(peer, context={"request": request}).data,
+            "window": {"start": window_start.isoformat(), "end": window_end.isoformat()},
+            "busy": [
+                {"start": s.isoformat(), "end": e.isoformat()}
+                for s, e in busy
+            ],
+            "holidays": _holidays_in_range(peer.country, window_start.date(), window_end.date()),
+        })
+
+
 class PublicProfileView(APIView):
     """
     GET /api/public/profile/<token>?from=YYYY-MM-DD&to=YYYY-MM-DD

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { BackButton } from "@/components/BackButton";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
@@ -10,10 +10,17 @@ import { SlotsCalendar } from "@/components/SlotsCalendar";
 import { Button, FormError } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import { WEEKDAYS, type Weekday } from "@/lib/me";
-import { getPeerAvailability, workingHoursRangeFromHours } from "@/lib/public-profile";
-import { fetchHolidaysForRange } from "@/lib/holidays";
+import {
+  computeFreeSlots,
+  getPeerAvailability,
+  getTeammateAvailability,
+  workingHoursRangeFromHours,
+  type PublicProfileResponse,
+} from "@/lib/public-profile";
 import type { Slot } from "@/lib/search";
 import { getTeammate, UsersApiError, type Teammate } from "@/lib/users";
+
+const INTERSECTION_DURATION_MIN = 30;
 
 const DAY_LABEL: Record<Weekday, string> = {
   monday: "Mon",
@@ -35,11 +42,14 @@ export default function TeammateProfilePage() {
   const [user, setUser] = useState<Teammate | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const [slots, setSlots] = useState<Slot[] | null>(null);
+  const [availability, setAvailability] = useState<PublicProfileResponse | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
 
-  const [holidays, setHolidays] = useState<Map<string, string>>(new Map());
+  const [showIntersection, setShowIntersection] = useState(false);
+  const [intersectionSlots, setIntersectionSlots] = useState<Slot[] | null>(null);
+  const [intersectionError, setIntersectionError] = useState<string | null>(null);
+  const [intersectionLoading, setIntersectionLoading] = useState(false);
 
   const isMe = meId !== null && meId === userId;
 
@@ -67,38 +77,66 @@ export default function TeammateProfilePage() {
     })().catch(() => router.replace("/auth/login"));
   }, [userId, router]);
 
-  // Once we have the teammate, fetch 8 weeks of slots that work for *both*
-  // of us — the intersection of caller + target free time within their
-  // joint working hours. For self-view (isMe), skip; the calendar there is
-  // about the caller's own free time and lives on /profile.
+  // Fetch the teammate's own availability — the same view they see on their
+  // /profile: working_hours minus their busy, no intersection with the caller.
+  // For self-view (isMe), skip; own calendar lives on /profile.
   useEffect(() => {
     if (!user) return;
     if (isMe) {
-      setSlots([]);
+      setAvailability(null);
       return;
     }
     setSearching(true);
     setSearchError(null);
+    getTeammateAvailability(user.id)
+      .then(setAvailability)
+      .catch((err) =>
+        setSearchError(err instanceof Error ? err.message : "Couldn't load availability."),
+      )
+      .finally(() => setSearching(false));
+  }, [user, isMe]);
+
+  const ownSlots = useMemo(() => {
+    if (!availability) return [];
+    return computeFreeSlots(
+      availability.profile.working_hours,
+      availability.busy,
+      new Date(availability.window.start),
+      new Date(availability.window.end),
+    );
+  }, [availability]);
+
+  const holidays = useMemo(() => {
+    if (!availability) return new Map<string, string>();
+    return new Map(availability.holidays.map((h) => [h.date, h.name]));
+  }, [availability]);
+
+  // Intersection view: lazily fetch the shared-slot search when the toggle is
+  // first flipped on, then reuse the cached result.
+  useEffect(() => {
+    if (!user || isMe || !showIntersection || intersectionSlots !== null) return;
+    setIntersectionLoading(true);
+    setIntersectionError(null);
     const now = new Date();
     const end = new Date();
     end.setDate(end.getDate() + 56);
     getPeerAvailability(user.id, {
       from: now.toISOString(),
       to: end.toISOString(),
-      durationMin: 60,
+      durationMin: INTERSECTION_DURATION_MIN,
     })
-      .then((r) => setSlots(r.slots))
+      .then((r) => setIntersectionSlots(r.slots))
       .catch((err) =>
-        setSearchError(err instanceof Error ? err.message : "Couldn't load availability."),
+        setIntersectionError(err instanceof Error ? err.message : "Couldn't load shared slots."),
       )
-      .finally(() => setSearching(false));
+      .finally(() => setIntersectionLoading(false));
+  }, [user, isMe, showIntersection, intersectionSlots]);
 
-    // Holidays for the visible range, in the teammate's country (since the
-    // page is mostly about their schedule).
-    fetchHolidaysForRange(now.toISOString(), end.toISOString(), user.country)
-      .then(setHolidays)
-      .catch(() => setHolidays(new Map()));
-  }, [user, isMe]);
+  const displayedSlots = showIntersection ? intersectionSlots ?? [] : ownSlots;
+  const displayedError = showIntersection ? intersectionError : searchError;
+  const displayedLoading = showIntersection
+    ? intersectionLoading && intersectionSlots === null
+    : searching && !availability;
 
   if (!meEmail) {
     return (
@@ -164,32 +202,50 @@ export default function TeammateProfilePage() {
           </div>
         </section>
 
-        {/* shared availability — intersection of caller + target */}
+        {/* teammate's own availability — same shape they see on their /profile.
+            Toggle switches to shared-slot search (intersection of the two
+            calendars, min 30-min slots) without leaving the page. */}
         {!isMe && (
           <section className="space-y-3">
             <header className="flex flex-wrap items-baseline justify-between gap-2">
               <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-                {user.first_name
-                  ? `Times that work for you and ${user.first_name}`
-                  : "Times that work for both of you"}
+                {showIntersection
+                  ? user.first_name
+                    ? `Times that work for you and ${user.first_name}`
+                    : "Times that work for both of you"
+                  : user.first_name
+                  ? `${user.first_name}'s availability`
+                  : "Availability"}
               </h2>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                Next 8 weeks · 60-min slots · use ‹ › to navigate
+                Next 8 weeks
+                {showIntersection ? ` · ${INTERSECTION_DURATION_MIN}-min slots` : ""} · use ‹ › to navigate
               </p>
             </header>
-            {searchError && <FormError message={searchError} />}
-            {searching && !slots ? (
+            <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+              <input
+                type="checkbox"
+                checked={showIntersection}
+                onChange={(e) => setShowIntersection(e.target.checked)}
+                className="h-4 w-4 rounded border-zinc-300 text-indigo-600 focus:ring-indigo-500 dark:border-zinc-600 dark:bg-zinc-800"
+              />
+              Show overlap with my calendar (min {INTERSECTION_DURATION_MIN}-min slots)
+            </label>
+            {displayedError && <FormError message={displayedError} />}
+            {displayedLoading ? (
               <CardSkeleton rows={6} />
-            ) : slots && slots.length > 0 ? (
+            ) : displayedSlots.length > 0 ? (
               <SlotsCalendar
-                slots={slots}
-                durationMin={60}
+                slots={displayedSlots}
+                durationMin={showIntersection ? INTERSECTION_DURATION_MIN : 30}
                 holidays={holidays}
-                workingHoursRange={user ? workingHoursRangeFromHours(user.working_hours) : undefined}
+                workingHoursRange={workingHoursRangeFromHours(user.working_hours)}
               />
             ) : (
               <section className="rounded-xl border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
-                No 1-hour slot when both of you are free over the next 8 weeks.
+                {showIntersection
+                  ? `No ${INTERSECTION_DURATION_MIN}-min slot when both of you are free over the next 8 weeks.`
+                  : "No free time in the upcoming weeks."}
               </section>
             )}
             <div className="flex justify-end">

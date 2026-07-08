@@ -113,6 +113,22 @@ export type PeerAvailabilityResponse = {
   holidays: { date: string; name: string }[];
 };
 
+/**
+ * Teammate's *own* availability — the same view they see on their own /profile.
+ * No intersection with the caller, no min-duration filter. Feeds /people/<id>.
+ */
+export async function getTeammateAvailability(
+  userId: number,
+): Promise<PublicProfileResponse> {
+  const res = await fetch(`/api/users/${userId}/availability`, {
+    method: "GET",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 export async function getPeerAvailability(
   userId: number,
   opts: { from?: string; to?: string; durationMin: number; bufferMin?: number },
