@@ -175,9 +175,11 @@ export function SlotsCalendar({
 
   return (
     <section className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      {/* navigation */}
+      {/* navigation — flex-1 outer cells anchor the day-toggle in the true
+          center; the range label lives inside the right cell and its dynamic
+          width no longer shifts the toggle horizontally. */}
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-100 px-3 py-3 dark:border-zinc-800 sm:px-4">
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 sm:flex-1 sm:justify-start">
           <button
             type="button"
             onClick={() => nudge(-1)}
@@ -205,7 +207,7 @@ export function SlotsCalendar({
         </div>
 
         {/* View toggle */}
-        <div className="flex rounded-md border border-zinc-200 dark:border-zinc-700">
+        <div className="flex shrink-0 rounded-md border border-zinc-200 dark:border-zinc-700">
           {([1, 3, 7] as ViewDays[]).map((v, i) => {
             const active = v === viewDays;
             return (
@@ -230,7 +232,7 @@ export function SlotsCalendar({
           })}
         </div>
 
-        <h3 className="min-w-0 basis-full truncate text-sm font-medium text-zinc-900 dark:text-zinc-50 sm:basis-auto sm:text-right">
+        <h3 className="min-w-0 basis-full truncate text-sm font-medium text-zinc-900 dark:text-zinc-50 sm:basis-0 sm:flex-1 sm:text-right">
           {viewDays === 7 && (
             <>
               Week {isoWk}
