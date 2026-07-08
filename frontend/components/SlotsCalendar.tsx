@@ -164,8 +164,6 @@ export function SlotsCalendar({
   );
   const hours = Array.from({ length: Math.max(0, maxHour - minHour) }, (_, i) => minHour + i);
 
-  const totalSlotsThisView = visibleIntervals.length;
-
   function nudge(delta: -1 | 1) {
     setViewStart((s) => addDays(s, viewDays * delta));
   }
@@ -241,9 +239,6 @@ export function SlotsCalendar({
           )}
           <span className="font-normal text-zinc-600 dark:text-zinc-400">{rangeLabel}</span>
         </h3>
-        {totalSlotsThisView === 0 && (
-          <p className="basis-full text-right text-xs text-zinc-500">no free slots in this view</p>
-        )}
       </header>
 
       {/* day headers */}

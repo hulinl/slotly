@@ -108,10 +108,11 @@ export default function TeammateProfilePage() {
     return new Map(availability.holidays.map((h) => [h.date, h.name]));
   }, [availability]);
 
-  // Intersection view: lazily fetch the shared-slot search when the toggle is
-  // first flipped on, then reuse the cached result.
+  // Prefetch the intersection view as soon as the peer's own availability
+  // has loaded — that way the toggle has instant data and the calendar
+  // doesn't briefly flash empty on the first flip.
   useEffect(() => {
-    if (!user || isMe || !showIntersection || intersectionSlots !== null) return;
+    if (!user || isMe || !availability || intersectionSlots !== null) return;
     setIntersectionLoading(true);
     setIntersectionError(null);
     const now = new Date();
@@ -127,7 +128,7 @@ export default function TeammateProfilePage() {
         setIntersectionError(err instanceof Error ? err.message : "Couldn't load shared slots."),
       )
       .finally(() => setIntersectionLoading(false));
-  }, [user, isMe, showIntersection, intersectionSlots]);
+  }, [user, isMe, availability, intersectionSlots]);
 
   const displayedSlots = showIntersection ? intersectionSlots ?? [] : ownSlots;
   const displayedError = showIntersection ? intersectionError : searchError;
