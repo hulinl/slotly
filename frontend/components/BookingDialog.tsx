@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MapPin, Video, X as XIcon } from "lucide-react";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
-import { Button, FormError, Input, Label } from "@/components/ui";
+import { Button, FormError, Input } from "@/components/ui";
 
 export type BookingKind = "online" | "physical";
 
@@ -195,19 +195,21 @@ export function BookingDialog({
     >
       <form
         onSubmit={handleSubmit}
-        className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 sm:max-w-lg sm:rounded-2xl"
+        className="flex h-[100dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 sm:h-auto sm:max-h-[92vh] sm:max-w-lg sm:rounded-2xl"
       >
-        {/* Sticky header — bottom-sheet look on mobile, clean on desktop */}
-        <header className="flex items-center gap-3 border-b border-zinc-100 px-5 py-3 dark:border-zinc-800">
-          <div className="flex-1 min-w-0">
-            <h2 className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-50">
+        {/* Header — sticky, compact on mobile (title inline with day). */}
+        <header className="flex items-center gap-2 border-b border-zinc-100 px-4 py-2.5 dark:border-zinc-800 sm:px-5 sm:py-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-[15px] font-semibold text-zinc-900 dark:text-zinc-50 sm:text-base">
               {mode === "public"
                 ? hostName
-                  ? `Book time with ${hostName}`
+                  ? `Book with ${hostName}`
                   : "Book a meeting"
-                : "Create meeting"}
+                : "New meeting"}
             </h2>
-            <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{dayLabel}</p>
+            <p className="truncate text-[11px] text-zinc-500 dark:text-zinc-400 sm:text-xs">
+              {dayLabel}
+            </p>
           </div>
           <button
             type="button"
@@ -220,31 +222,30 @@ export function BookingDialog({
           </button>
         </header>
 
-        {/* Body — usually fits without scroll. When it doesn't (small
-            viewport + physical + long start-chip list), a thin theme-aware
-            scrollbar shows rather than the browser's default black bar. */}
-        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4 [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.300)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-zinc-300 [&::-webkit-scrollbar-track]:bg-transparent dark:[scrollbar-color:theme(colors.zinc.700)_transparent] dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700">
+        {/* Body — mobile-first compact layout. Chips scroll horizontally on
+            phones (single row, no wrap = predictable height); wrap freely on
+            sm+. Labels are compact uppercase micro-caps to save vertical
+            space without hurting scanability. */}
+        <div className="flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3 [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.300)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-zinc-300 [&::-webkit-scrollbar-track]:bg-transparent dark:[scrollbar-color:theme(colors.zinc.700)_transparent] dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700 sm:space-y-4 sm:px-5 sm:py-4">
           {allowPhysical && (
-            <fieldset className="space-y-2">
-              <legend className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
-                Meeting type
-              </legend>
+            <fieldset>
+              <legend className="sr-only">Meeting type</legend>
               <div className="grid grid-cols-2 gap-2">
                 <KindTile
                   active={kind === "online"}
                   onClick={() => setKind("online")}
-                  icon={<Video size={16} aria-hidden />}
+                  icon={<Video size={14} aria-hidden />}
                   title="Online"
-                  sub="Books now · meeting link included"
+                  sub="Books now · meeting link"
                   tone="indigo"
                   recommended
                 />
                 <KindTile
                   active={kind === "physical"}
                   onClick={() => setKind("physical")}
-                  icon={<MapPin size={16} aria-hidden />}
+                  icon={<MapPin size={14} aria-hidden />}
                   title="In person"
-                  sub="Request — host approves first"
+                  sub="Needs host approval"
                   tone="amber"
                 />
               </div>
@@ -253,7 +254,7 @@ export function BookingDialog({
 
           {kind === "physical" && (
             <div className="space-y-1">
-              <Label htmlFor="location">Where</Label>
+              <MicroLabel htmlFor="location">Where</MicroLabel>
               <AddressAutocomplete
                 id="location"
                 value={location}
@@ -264,14 +265,10 @@ export function BookingDialog({
             </div>
           )}
 
-          {/* Time — start chips + duration chips. Duration options are
-              filtered to what actually fits the free block; start options
-              re-derived from duration so the two never form a nonsense
-              combo. */}
-          <div className="space-y-3">
-            <div>
-              <Label htmlFor="duration-group">Duration</Label>
-              <div id="duration-group" className="mt-1.5 flex flex-wrap gap-1.5">
+          <div className="space-y-2">
+            <div className="space-y-1">
+              <MicroLabel htmlFor="duration-group">Duration</MicroLabel>
+              <ChipRow>
                 {durationOptions.map((d) => (
                   <ChipButton
                     key={d}
@@ -280,23 +277,23 @@ export function BookingDialog({
                     label={formatDuration(d)}
                   />
                 ))}
-              </div>
+              </ChipRow>
               {durationOptions.length === 1 && durationOptions[0] < 30 && (
-                <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
                   Only {formatDuration(durationOptions[0])} fits this free
                   block — pick another day for a longer slot.
                 </p>
               )}
             </div>
 
-            <div>
-              <Label htmlFor="start-group">Start</Label>
+            <div className="space-y-1">
+              <MicroLabel htmlFor="start-group">Start</MicroLabel>
               {startOptions.length === 0 ? (
-                <p className="mt-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+                <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
                   No start time fits the picked duration. Try a shorter one.
                 </p>
               ) : startOptions.length <= CHIP_LIMIT ? (
-                <div id="start-group" className="mt-1.5 flex flex-wrap gap-1.5">
+                <ChipRow>
                   {startOptions.map((m) => (
                     <ChipButton
                       key={m}
@@ -305,13 +302,13 @@ export function BookingDialog({
                       label={formatMinutes(m)}
                     />
                   ))}
-                </div>
+                </ChipRow>
               ) : (
                 <select
                   id="start-group"
                   value={startMin ?? ""}
                   onChange={(e) => setStartMin(Number(e.target.value))}
-                  className="mt-1.5 h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                  className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
                 >
                   {startOptions.map((m) => (
                     <option key={m} value={m}>
@@ -324,9 +321,9 @@ export function BookingDialog({
           </div>
 
           {mode === "public" && (
-            <div className="grid gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800 sm:gap-3 sm:pt-4">
               <div className="space-y-1">
-                <Label htmlFor="visitor-name">Your name</Label>
+                <MicroLabel htmlFor="visitor-name">Your name</MicroLabel>
                 <Input
                   id="visitor-name"
                   value={visitorName}
@@ -336,7 +333,7 @@ export function BookingDialog({
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="visitor-email">Your email</Label>
+                <MicroLabel htmlFor="visitor-email">Your email</MicroLabel>
                 <Input
                   id="visitor-email"
                   type="email"
@@ -346,7 +343,7 @@ export function BookingDialog({
                   autoComplete="email"
                 />
               </div>
-              {/* Honeypot — off-screen, aria-hidden. */}
+              {/* Honeypot — off-screen. */}
               <div
                 aria-hidden
                 className="pointer-events-none absolute -left-[9999px] h-0 w-0 overflow-hidden opacity-0"
@@ -365,7 +362,7 @@ export function BookingDialog({
           )}
 
           <div className="space-y-1">
-            <Label htmlFor="title">Title</Label>
+            <MicroLabel htmlFor="title">Title</MicroLabel>
             <Input
               id="title"
               value={title}
@@ -377,7 +374,7 @@ export function BookingDialog({
 
           {showNotes ? (
             <div className="space-y-1">
-              <Label htmlFor="notes">Notes</Label>
+              <MicroLabel htmlFor="notes">Notes</MicroLabel>
               <textarea
                 id="notes"
                 value={notes}
@@ -387,7 +384,7 @@ export function BookingDialog({
                 autoFocus
                 placeholder={
                   kind === "physical"
-                    ? "Anything the host should know before approving?"
+                    ? "Anything the host should know?"
                     : "Agenda, links, context…"
                 }
                 className="w-full resize-y rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:placeholder:text-zinc-500"
@@ -411,8 +408,13 @@ export function BookingDialog({
           )}
         </div>
 
-        {/* Sticky footer with primary action */}
-        <footer className="flex items-center justify-end gap-2 border-t border-zinc-100 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
+        {/* Sticky footer with primary action — tighter on mobile so the
+            keyboard doesn't push it off-screen. iOS safe-area padding keeps
+            the button above the home indicator. */}
+        <footer
+          className="flex items-center justify-end gap-2 border-t border-zinc-100 bg-white px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900 sm:px-5 sm:py-3"
+          style={{ paddingBottom: "max(0.625rem, env(safe-area-inset-bottom))" }}
+        >
           <Button
             type="button"
             variant="secondary"
@@ -473,23 +475,52 @@ function KindTile({
       onClick={onClick}
       aria-pressed={active}
       className={
-        "relative flex flex-col gap-1 rounded-lg border p-3 text-left transition-all " +
+        "relative flex flex-col gap-0.5 rounded-lg border p-2.5 text-left transition-all sm:gap-1 sm:p-3 " +
         (active
           ? activeClass
           : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800/60")
       }
     >
-      <div className={"flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50"}>
+      <div className="flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
         <span className={iconClass}>{icon}</span>
         {title}
         {recommended && (
-          <span className="ml-auto rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+          <span className="ml-auto hidden rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 sm:inline">
             Recommended
           </span>
         )}
       </div>
-      <div className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{sub}</div>
+      {/* Subtitle: on mobile we sacrifice it for height (tile title +
+          icon already carries the meaning); on sm+ we bring it back. */}
+      <div className="hidden text-[11px] leading-snug text-zinc-500 dark:text-zinc-400 sm:block">
+        {sub}
+      </div>
     </button>
+  );
+}
+
+/** Micro uppercase label — same info as `<Label>` at a fraction of the
+ * vertical footprint. Used inside the dialog to squeeze rows on mobile
+ * without hiding what the field means. */
+function MicroLabel({ htmlFor, children }: { htmlFor?: string; children: React.ReactNode }) {
+  return (
+    <label
+      htmlFor={htmlFor}
+      className="block text-[10px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400"
+    >
+      {children}
+    </label>
+  );
+}
+
+/** Chip strip: on mobile it lives on a single horizontally-scrollable
+ * row (predictable height regardless of option count). On sm+ chips wrap
+ * freely so the desktop view keeps its calm two-row look. */
+function ChipRow({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
+      {children}
+    </div>
   );
 }
 
@@ -508,7 +539,7 @@ function ChipButton({
       onClick={onClick}
       aria-pressed={active}
       className={
-        "rounded-full border px-3 py-1 text-sm transition-colors " +
+        "shrink-0 rounded-full border px-3 py-1 text-sm transition-colors " +
         (active
           ? "border-indigo-600 bg-indigo-600 text-white dark:border-indigo-500 dark:bg-indigo-500"
           : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800")
