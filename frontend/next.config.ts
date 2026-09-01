@@ -26,6 +26,10 @@ const nextConfig: NextConfig = {
       { source: "/settings/teams", destination: "/groups", permanent: true },
       { source: "/settings/teams/:id", destination: "/groups/:id", permanent: true },
       { source: "/connections", destination: "/people", permanent: true },
+      // Integrations merged into Calendars (both are "connect a calendar";
+      // splitting them across two settings screens was confusing users).
+      // Preserve any query string (e.g. ?google=connected after OAuth callback).
+      { source: "/settings/integrations", destination: "/settings/calendars", permanent: true },
     ];
   },
 };

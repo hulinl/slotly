@@ -33,10 +33,12 @@ export function MicrosoftSsoButton({ label }: { label: string }) {
 }
 
 export function SsoButtons({ verb }: { verb: "Sign in" | "Sign up" }) {
+  // Microsoft SSO is hidden until the MS Graph OAuth app is set up — showing
+  // a button that would 503 on the backend is worse UX than not offering it.
+  // Re-enable by uncommenting the Microsoft button below when MS is ready.
   return (
     <div className="space-y-2">
       <GoogleSsoButton label={`${verb} with Google`} />
-      <MicrosoftSsoButton label={`${verb} with Microsoft`} />
     </div>
   );
 }

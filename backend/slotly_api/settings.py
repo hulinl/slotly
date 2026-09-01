@@ -236,17 +236,22 @@ GOOGLE_OAUTH_REDIRECT_URI = env(
 # Path is appended to FRONTEND_BASE_URL (defined in settings_prod.py for
 # production; here for dev). The query string carries a status flag the
 # frontend reads to render success/failure.
-GOOGLE_OAUTH_FRONTEND_RETURN = "/settings/integrations"
+GOOGLE_OAUTH_FRONTEND_RETURN = "/settings/calendars"
 FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:3000")
-# Requested scopes. Calendar.events is enough for events.insert + freeBusy;
-# avoid the broader calendar scope to keep the consent screen narrower.
+# Requested scopes.
+#   calendar.events      — read+write events in specific calendars
+#   calendar.freebusy    — read free/busy across all calendars
+#   calendar.readonly    — required to list the user's calendars via calendarList
+#                          (calendar.events alone returns 403 on that endpoint —
+#                          the settings dropdown "Pick a calendar to write into"
+#                          couldn't populate without it)
+#   openid/email/profile — SSO identity + given_name/family_name for signup
 GOOGLE_OAUTH_SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.freebusy",
+    "https://www.googleapis.com/auth/calendar.readonly",
     "openid",
     "email",
-    # profile grants us given_name / family_name for SSO signup so the new
-    # user's first_name / last_name aren't blank on first login.
     "profile",
 ]
 
@@ -261,7 +266,7 @@ MICROSOFT_OAUTH_REDIRECT_URI = env(
     "MICROSOFT_OAUTH_REDIRECT_URI",
     default="http://localhost:8000/api/oauth/microsoft/callback",
 )
-MICROSOFT_OAUTH_FRONTEND_RETURN = "/settings/integrations"
+MICROSOFT_OAUTH_FRONTEND_RETURN = "/settings/calendars"
 # offline_access → refresh_token. Calendars.ReadWrite → create events on
 # any calendar the user can edit. profile → given_name/family_name for
 # SSO signup so the new user's name isn't blank.

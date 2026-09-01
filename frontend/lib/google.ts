@@ -67,12 +67,25 @@ export async function setWriteCalendar(
   return (await res.json()) as GoogleAccountStatus;
 }
 
+export class ReconnectRequiredError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReconnectRequiredError";
+  }
+}
+
 export async function getWritableCalendars(): Promise<WritableCalendar[]> {
   const res = await fetch("/api/google-account/writable-calendars", {
     credentials: "include",
   });
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { detail?: string };
+    const body = (await res.json().catch(() => ({}))) as {
+      detail?: string;
+      reconnect_required?: boolean;
+    };
+    if (body.reconnect_required) {
+      throw new ReconnectRequiredError(body.detail ?? "Reconnect required");
+    }
     throw new Error(body.detail ?? `HTTP ${res.status}`);
   }
   const data = (await res.json()) as { calendars: WritableCalendar[] };

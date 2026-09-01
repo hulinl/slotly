@@ -6,14 +6,15 @@
  *   - /people/[id]  → authed booking with a connected teammate (peer known)
  *   - /u/[token]    → public booking by an anonymous visitor (self-identify)
  *
- * The interval passed in spans the entire free block on that day (e.g.
- * 09:00–17:00). The user picks a specific start time and duration inside
- * that window; the dialog returns ISO datetimes tied to the interval's
- * calendar day. All submission (calling the API, error handling) is done
- * by the parent — this component is purely presentation + local form state.
+ * Layout: bottom-sheet on phones, centered card on tablet+. Big visual
+ * Online/In-person tiles; time slot picker as chips (falls back to a
+ * scrollable dropdown when there are too many); duration chips limited to
+ * options that actually fit the clicked free interval so the user can't
+ * assemble a nonsense combo.
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { MapPin, Video, X as XIcon } from "lucide-react";
 import { Button, FormError, Input, Label } from "@/components/ui";
 
 export type BookingKind = "online" | "physical";
@@ -30,8 +31,9 @@ export type BookingSubmit = {
   visitorEmail?: string;
 };
 
-const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
+const ALL_DURATIONS = [15, 30, 45, 60, 90, 120];
 const START_STEP_MIN = 15;
+const CHIP_LIMIT = 12; // switch to a dropdown when there are more slots than this
 
 export function BookingDialog({
   open,
@@ -49,10 +51,8 @@ export function BookingDialog({
 }: {
   open: boolean;
   onClose: () => void;
-  /** null when nothing is picked yet — dialog stays hidden. */
   interval: { start: Date; end: Date } | null;
   mode: "authed" | "public";
-  /** Prefilled meeting title (e.g. "Meeting with Anna"). User can edit. */
   defaultTitle: string;
   defaultDurationMin?: number;
   submitting: boolean;
@@ -62,9 +62,8 @@ export function BookingDialog({
   /** Only used in public mode — shown to visitors so they know whose
    * calendar they're booking. */
   hostName?: string;
-  /** Show the Online / In-person toggle. Physical requests need host
-   * approval and go through the /bookings queue; online books immediately.
-   * Only exposed on the public flow for MVP. */
+  /** Show the Online / In-person selector. Physical requests need host
+   * approval; online books immediately. Only exposed on the public flow. */
   allowPhysical?: boolean;
 }) {
   const [title, setTitle] = useState(defaultTitle);
@@ -75,8 +74,24 @@ export function BookingDialog({
   const [visitorEmail, setVisitorEmail] = useState("");
   const [kind, setKind] = useState<BookingKind>("online");
   const [location, setLocation] = useState("");
-  // Honeypot — hidden from users but scripts often fill every text input.
+  // Honeypot — off-screen text field that legit users never see. Bots
+  // that greedily fill every input trip it and get silently 204'd.
   const [hp, setHp] = useState("");
+
+  // Only offer durations that actually fit the clicked free block, so the
+  // user can't pick "2h" inside a 30-minute gap and hit a confusing error
+  // after submit. If none fit (tiny block), we fall back to allowing the
+  // block's whole length as the one option.
+  const intervalLenMin = useMemo(() => {
+    if (!interval) return 0;
+    return Math.floor((interval.end.getTime() - interval.start.getTime()) / 60_000);
+  }, [interval]);
+
+  const durationOptions = useMemo(() => {
+    if (intervalLenMin <= 0) return [] as number[];
+    const fits = ALL_DURATIONS.filter((d) => d <= intervalLenMin);
+    return fits.length > 0 ? fits : [intervalLenMin];
+  }, [intervalLenMin]);
 
   const startOptions = useMemo(() => {
     if (!interval) return [] as number[];
@@ -86,30 +101,32 @@ export function BookingDialog({
     const first15 = Math.ceil(first / START_STEP_MIN) * START_STEP_MIN;
     const out: number[] = [];
     for (let m = first15; m <= lastAllowed; m += START_STEP_MIN) out.push(m);
-    // Always include the earliest possible start even if it doesn't land on
-    // a 15-minute grid (interval starts at 09:07 → include 09:07).
     if (out.length === 0 || out[0] !== first) {
       if (first <= lastAllowed) out.unshift(first);
     }
     return out;
   }, [interval, durationMin]);
 
-  // Reset per-open state so the dialog opens fresh each time.
+  // Reset per-open — dialog opens fresh each time. Also auto-pick sensible
+  // defaults for duration + start based on the newly-clicked interval.
   useEffect(() => {
     if (!open || !interval) return;
     setTitle(defaultTitle);
     setNotes("");
-    setDurationMin(defaultDurationMin);
-    setStartMin(null);
     setVisitorName("");
     setVisitorEmail("");
     setKind("online");
     setLocation("");
     setHp("");
-  }, [open, interval, defaultTitle, defaultDurationMin]);
+    const d = ALL_DURATIONS.find((x) => x === defaultDurationMin && x <= intervalLenMin)
+      ?? ALL_DURATIONS.filter((x) => x <= intervalLenMin).slice(-1)[0]
+      ?? intervalLenMin;
+    setDurationMin(d);
+    setStartMin(null);
+  }, [open, interval, defaultTitle, defaultDurationMin, intervalLenMin]);
 
-  // Auto-pick the earliest slot when duration changes and the current pick
-  // becomes invalid.
+  // If the current start becomes invalid (duration change shifts the last-
+  // allowed start earlier), snap to the earliest still-valid option.
   useEffect(() => {
     if (!open || !interval || startOptions.length === 0) return;
     if (startMin === null || !startOptions.includes(startMin)) {
@@ -117,7 +134,6 @@ export function BookingDialog({
     }
   }, [open, interval, startOptions, startMin]);
 
-  // ESC closes.
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -133,7 +149,6 @@ export function BookingDialog({
     weekday: "long",
     day: "numeric",
     month: "long",
-    year: "numeric",
   });
   const canSubmit =
     startMin !== null &&
@@ -164,7 +179,7 @@ export function BookingDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !submitting) onClose();
       }}
@@ -174,199 +189,300 @@ export function BookingDialog({
     >
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-md space-y-4 rounded-xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-900"
+        className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 sm:rounded-2xl"
       >
-        <header>
-          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-            {mode === "public"
-              ? hostName
-                ? `Book time with ${hostName}`
-                : "Book a meeting"
-              : "Create meeting"}
-          </h2>
-          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{dayLabel}</p>
+        {/* Sticky header — bottom-sheet look on mobile, clean on desktop */}
+        <header className="flex items-start gap-3 border-b border-zinc-100 px-5 py-4 dark:border-zinc-800">
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              {mode === "public"
+                ? hostName
+                  ? `Book time with ${hostName}`
+                  : "Book a meeting"
+                : "Create meeting"}
+            </h2>
+            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{dayLabel}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={submitting}
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            aria-label="Close"
+          >
+            <XIcon size={18} aria-hidden />
+          </button>
         </header>
 
-        {mode === "public" && (
-          <>
-            <div className="space-y-1">
-              <Label htmlFor="visitor-name">Your name</Label>
-              <Input
-                id="visitor-name"
-                value={visitorName}
-                onChange={(e) => setVisitorName(e.target.value)}
-                required
-                autoComplete="name"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="visitor-email">Your email</Label>
-              <Input
-                id="visitor-email"
-                type="email"
-                value={visitorEmail}
-                onChange={(e) => setVisitorEmail(e.target.value)}
-                required
-                autoComplete="email"
-              />
-              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                The calendar invite will be sent here.
-              </p>
-            </div>
-            {/* Honeypot. Left in DOM but off-screen so bots see it but users
-                (and screen readers via aria-hidden) don't. */}
-            <div
-              aria-hidden
-              className="pointer-events-none absolute -left-[9999px] h-0 w-0 overflow-hidden opacity-0"
-            >
-              <label>
-                Website (leave empty)
-                <input
-                  tabIndex={-1}
-                  autoComplete="off"
-                  value={hp}
-                  onChange={(e) => setHp(e.target.value)}
+        {/* Scrollable body */}
+        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
+          {allowPhysical && (
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+                Meeting type
+              </legend>
+              <div className="grid grid-cols-2 gap-2">
+                <KindTile
+                  active={kind === "online"}
+                  onClick={() => setKind("online")}
+                  icon={<Video size={16} aria-hidden />}
+                  title="Online"
+                  sub="Books now · meeting link included"
+                  tone="indigo"
+                  recommended
                 />
-              </label>
-            </div>
-          </>
-        )}
+                <KindTile
+                  active={kind === "physical"}
+                  onClick={() => setKind("physical")}
+                  icon={<MapPin size={16} aria-hidden />}
+                  title="In person"
+                  sub="Request — host approves first"
+                  tone="amber"
+                />
+              </div>
+            </fieldset>
+          )}
 
-        {allowPhysical && (
-          <div className="space-y-1">
-            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200">Meeting type</span>
-            <div className="flex rounded-md border border-zinc-200 p-0.5 dark:border-zinc-700">
-              <KindOption
-                active={kind === "online"}
-                onClick={() => setKind("online")}
-                label="Online"
-                sub="Instant · with meeting link"
+          {kind === "physical" && (
+            <div className="space-y-1">
+              <Label htmlFor="location">Where</Label>
+              <Input
+                id="location"
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="Address, meeting room, café…"
+                required
+                autoComplete="street-address"
               />
-              <KindOption
-                active={kind === "physical"}
-                onClick={() => setKind("physical")}
-                label="In person"
-                sub="Sent as a request for approval"
-              />
+            </div>
+          )}
+
+          {/* Time — start chips + duration chips. Duration options are
+              filtered to what actually fits the free block; start options
+              re-derived from duration so the two never form a nonsense
+              combo. */}
+          <div className="space-y-3">
+            <div>
+              <Label htmlFor="duration-group">Duration</Label>
+              <div id="duration-group" className="mt-1.5 flex flex-wrap gap-1.5">
+                {durationOptions.map((d) => (
+                  <ChipButton
+                    key={d}
+                    active={d === durationMin}
+                    onClick={() => setDurationMin(d)}
+                    label={formatDuration(d)}
+                  />
+                ))}
+              </div>
+              {durationOptions.length === 1 && durationOptions[0] < 30 && (
+                <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                  Only {formatDuration(durationOptions[0])} fits this free
+                  block — pick another day for a longer slot.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <Label htmlFor="start-group">Start</Label>
+              {startOptions.length === 0 ? (
+                <p className="mt-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+                  No start time fits the picked duration. Try a shorter one.
+                </p>
+              ) : startOptions.length <= CHIP_LIMIT ? (
+                <div id="start-group" className="mt-1.5 flex flex-wrap gap-1.5">
+                  {startOptions.map((m) => (
+                    <ChipButton
+                      key={m}
+                      active={m === startMin}
+                      onClick={() => setStartMin(m)}
+                      label={formatMinutes(m)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <select
+                  id="start-group"
+                  value={startMin ?? ""}
+                  onChange={(e) => setStartMin(Number(e.target.value))}
+                  className="mt-1.5 h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+                >
+                  {startOptions.map((m) => (
+                    <option key={m} value={m}>
+                      {formatMinutes(m)}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
-        )}
 
-        {kind === "physical" && (
+          {mode === "public" && (
+            <div className="grid gap-3 border-t border-zinc-100 pt-4 dark:border-zinc-800 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="visitor-name">Your name</Label>
+                <Input
+                  id="visitor-name"
+                  value={visitorName}
+                  onChange={(e) => setVisitorName(e.target.value)}
+                  required
+                  autoComplete="name"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="visitor-email">Your email</Label>
+                <Input
+                  id="visitor-email"
+                  type="email"
+                  value={visitorEmail}
+                  onChange={(e) => setVisitorEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                />
+              </div>
+              {/* Honeypot — off-screen, aria-hidden. */}
+              <div
+                aria-hidden
+                className="pointer-events-none absolute -left-[9999px] h-0 w-0 overflow-hidden opacity-0"
+              >
+                <label>
+                  Website (leave empty)
+                  <input
+                    tabIndex={-1}
+                    autoComplete="off"
+                    value={hp}
+                    onChange={(e) => setHp(e.target.value)}
+                  />
+                </label>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-1">
-            <Label htmlFor="location">Where</Label>
+            <Label htmlFor="title">Title</Label>
             <Input
-              id="location"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="Address, meeting room, café…"
+              id="title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
               required
+              maxLength={200}
             />
           </div>
-        )}
 
-        <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1">
-            <Label htmlFor="start-time">Start</Label>
-            <select
-              id="start-time"
-              value={startMin ?? ""}
-              onChange={(e) => setStartMin(Number(e.target.value))}
-              disabled={startOptions.length === 0}
-              className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-            >
-              {startOptions.length === 0 && (
-                <option value="">No time fits the picked duration</option>
-              )}
-              {startOptions.map((m) => (
-                <option key={m} value={m}>
-                  {formatMinutes(m)}
-                </option>
-              ))}
-            </select>
+            <Label htmlFor="notes">Notes (optional)</Label>
+            <textarea
+              id="notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              maxLength={2000}
+              placeholder={
+                kind === "physical"
+                  ? "Anything the host should know before approving?"
+                  : "Agenda, links, context…"
+              }
+              className="w-full resize-y rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:placeholder:text-zinc-500"
+            />
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="duration">Duration</Label>
-            <select
-              id="duration"
-              value={durationMin}
-              onChange={(e) => setDurationMin(Number(e.target.value))}
-              className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-            >
-              {DURATION_OPTIONS.map((d) => (
-                <option key={d} value={d}>
-                  {d < 60 ? `${d} min` : d % 60 === 0 ? `${d / 60} hr` : `${d} min`}
-                </option>
-              ))}
-            </select>
-          </div>
+
+          {errorMessage && <FormError message={errorMessage} />}
+          {successMessage && (
+            <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+              {successMessage}
+            </p>
+          )}
         </div>
 
-        <div className="space-y-1">
-          <Label htmlFor="title">Title</Label>
-          <Input
-            id="title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            maxLength={200}
-          />
-        </div>
-
-        <div className="space-y-1">
-          <Label htmlFor="notes">Notes (optional)</Label>
-          <textarea
-            id="notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={3}
-            maxLength={2000}
-            className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-          />
-        </div>
-
-        {errorMessage && <FormError message={errorMessage} />}
-        {successMessage && (
-          <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-            {successMessage}
-          </p>
-        )}
-
-        <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+        {/* Sticky footer with primary action */}
+        <footer className="flex items-center justify-end gap-2 border-t border-zinc-100 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
           <Button
             type="button"
             variant="secondary"
             onClick={onClose}
             disabled={submitting}
-            className="sm:w-auto sm:px-4"
+            className="w-auto px-4"
           >
             Cancel
           </Button>
           <Button
             type="submit"
             disabled={!canSubmit}
-            className="sm:w-auto sm:px-4"
+            className={
+              "w-auto px-5 " +
+              (kind === "physical"
+                ? "!bg-amber-600 hover:!bg-amber-700 dark:!bg-amber-600 dark:hover:!bg-amber-700"
+                : "")
+            }
           >
             {submitting
               ? kind === "physical" ? "Sending…" : "Booking…"
               : kind === "physical" ? "Send request" : "Book"}
           </Button>
-        </div>
+        </footer>
       </form>
     </div>
   );
 }
 
-function KindOption({
+function KindTile({
+  active,
+  onClick,
+  icon,
+  title,
+  sub,
+  tone,
+  recommended = false,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  title: string;
+  sub: string;
+  tone: "indigo" | "amber";
+  recommended?: boolean;
+}) {
+  const activeClass =
+    tone === "indigo"
+      ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-500 ring-offset-1 dark:border-indigo-400 dark:bg-indigo-950/50 dark:ring-offset-zinc-900"
+      : "border-amber-500 bg-amber-50 ring-2 ring-amber-500 ring-offset-1 dark:border-amber-400 dark:bg-amber-950/50 dark:ring-offset-zinc-900";
+  const iconClass =
+    tone === "indigo"
+      ? "text-indigo-600 dark:text-indigo-300"
+      : "text-amber-700 dark:text-amber-300";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={
+        "relative flex flex-col gap-1 rounded-lg border p-3 text-left transition-all " +
+        (active
+          ? activeClass
+          : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800/60")
+      }
+    >
+      <div className={"flex items-center gap-1.5 text-sm font-semibold text-zinc-900 dark:text-zinc-50"}>
+        <span className={iconClass}>{icon}</span>
+        {title}
+        {recommended && (
+          <span className="ml-auto rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+            Recommended
+          </span>
+        )}
+      </div>
+      <div className="text-[11px] leading-snug text-zinc-500 dark:text-zinc-400">{sub}</div>
+    </button>
+  );
+}
+
+function ChipButton({
   active,
   onClick,
   label,
-  sub,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
-  sub: string;
 }) {
   return (
     <button
@@ -374,14 +490,13 @@ function KindOption({
       onClick={onClick}
       aria-pressed={active}
       className={
-        "flex-1 rounded-sm px-3 py-2 text-left text-sm transition-colors " +
+        "rounded-full border px-3 py-1 text-sm transition-colors " +
         (active
-          ? "bg-indigo-50 text-indigo-900 dark:bg-indigo-950/40 dark:text-indigo-100"
-          : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800/50")
+          ? "border-indigo-600 bg-indigo-600 text-white dark:border-indigo-500 dark:bg-indigo-500"
+          : "border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800")
       }
     >
-      <div className="font-medium">{label}</div>
-      <div className="text-[11px] text-zinc-500 dark:text-zinc-400">{sub}</div>
+      {label}
     </button>
   );
 }
@@ -394,6 +509,12 @@ function formatMinutes(m: number): string {
   const h = Math.floor(m / 60);
   const mm = m % 60;
   return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+function formatDuration(min: number): string {
+  if (min < 60) return `${min} min`;
+  if (min % 60 === 0) return `${min / 60} h`;
+  return `${Math.floor(min / 60)}h ${min % 60}m`;
 }
 
 /** Render a Date as ISO 8601 in the browser's local time zone (no Z suffix),

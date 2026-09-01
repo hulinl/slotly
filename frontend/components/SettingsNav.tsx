@@ -16,7 +16,6 @@ import {
   Bell,
   CalendarDays,
   Clock,
-  Plug,
   UserCircle,
   UserCog,
   type LucideIcon,
@@ -35,7 +34,6 @@ const TABS: SettingsTab[] = [
   { href: "/settings", label: "Profile", icon: UserCircle, activePath: "/settings" },
   { href: "/settings/working-hours", label: "Working hours", icon: Clock, activePath: "/settings/working-hours" },
   { href: "/settings/calendars", label: "Calendars", icon: CalendarDays, activePath: "/settings/calendars" },
-  { href: "/settings/integrations", label: "Integrations", icon: Plug, activePath: "/settings/integrations" },
   { href: "/settings/notifications", label: "Notifications", icon: Bell, activePath: "/settings/notifications" },
   { href: "/settings/account", label: "Account", icon: UserCog, activePath: "/settings/account" },
 ];
@@ -44,10 +42,10 @@ export function SettingsNav() {
   const pathname = usePathname() ?? "";
   return (
     <nav
-      className="sticky z-10 -mx-6 mb-2 overflow-x-auto border-b border-zinc-200 bg-white px-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 sm:-mx-0 sm:rounded-lg sm:border sm:px-1 sm:dark:bg-zinc-900"
+      className="sticky z-10 -mx-6 mb-2 border-b border-zinc-200 bg-white px-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 sm:-mx-0 sm:rounded-lg sm:border sm:px-1 sm:dark:bg-zinc-900"
       style={{ top: "var(--header-h, 60px)" }}
     >
-      <ul className="flex min-w-max items-center gap-1 py-2">
+      <ul className="flex flex-wrap items-center gap-x-1 gap-y-0.5 py-1.5">
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = t.activePath === pathname;
@@ -56,7 +54,7 @@ export function SettingsNav() {
               <Link
                 href={t.href}
                 className={
-                  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-sm transition-colors " +
+                  "inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 text-sm transition-colors " +
                   (active
                     ? "bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200"
                     : "text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800")

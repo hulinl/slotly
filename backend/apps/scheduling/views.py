@@ -23,6 +23,7 @@ from typing import Any
 from django.conf import settings
 from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
 from django.http import HttpRequest, HttpResponseRedirect
+from django.shortcuts import get_object_or_404
 from django.utils import timezone as djtz
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -305,9 +306,20 @@ class WritableCalendarsView(APIView):
         try:
             items = list_writable_calendars(request.user)
         except GoogleOAuthError as exc:
-            # Refresh token was revoked / grant broken — nudge reconnect.
             return Response({"detail": f"Reconnect needed: {exc}"}, status=401)
         except GoogleApiError as exc:
+            # 403 here means the granted scopes don't cover calendarList
+            # (typically an older grant made before we added calendar.readonly).
+            # Surface a specific error the frontend can act on — offer a
+            # reconnect button rather than a generic "Google refused".
+            if exc.status == 403:
+                return Response(
+                    {
+                        "detail": "Reconnect Google — the app now needs permission to list your calendars.",
+                        "reconnect_required": True,
+                    },
+                    status=401,
+                )
             return Response({"detail": f"Google refused: {exc}"}, status=502)
         return Response({"calendars": items})
 
@@ -649,7 +661,7 @@ class PublicMeetingCreateView(APIView):
         #   IP bucket:    caps a single client hammering many links
         # Redis-backed cache (see settings.CACHES).
         from django.core.cache import cache as _cache
-        minute = int(timezone.now().timestamp() // 60)
+        minute = int(djtz.now().timestamp() // 60)
         ip = _client_ip(request)
         for key, limit in (
             (f"pubmeet:t:{token}:{minute}", 10),
@@ -688,7 +700,7 @@ class PublicMeetingCreateView(APIView):
         if (end_dt - start_dt) > timedelta(hours=12):
             return Response({"detail": "Meeting longer than 12 hours refused."}, status=400)
         # Don't book into the past (with 2-min grace for clock skew).
-        if end_dt < timezone.now() - timedelta(minutes=2):
+        if end_dt < djtz.now() - timedelta(minutes=2):
             return Response({"detail": "Cannot book a slot in the past."}, status=400)
 
         # Physical meetings never touch the calendar directly — they go into
@@ -865,13 +877,13 @@ class BookingRequestDecideView(APIView):
                     status=502,
                 )
             req.status = BookingRequest.Status.APPROVED
-            req.decided_at = timezone.now()
+            req.decided_at = djtz.now()
             req.decision_note = note
             req.event_id = event.get("id", "") or event.get("iCalUId", "")
             req.save(update_fields=["status", "decided_at", "decision_note", "event_id"])
         else:  # reject
             req.status = BookingRequest.Status.REJECTED
-            req.decided_at = timezone.now()
+            req.decided_at = djtz.now()
             req.decision_note = note
             req.save(update_fields=["status", "decided_at", "decision_note"])
             _mail_visitor_rejection(req, note)

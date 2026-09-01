@@ -32,7 +32,10 @@ from .views import _STATE_SALT
 
 
 def _bake_state(user_pk: int) -> str:
-    return TimestampSigner(salt=_STATE_SALT).sign(str(user_pk))
+    # Callback expects the "user:<pk>" discriminator introduced with the SSO
+    # anon flow — the callback branches on this prefix to decide "link an
+    # existing account" vs "create + login a new user".
+    return TimestampSigner(salt=_STATE_SALT).sign(f"user:{user_pk}")
 
 
 @override_settings(
@@ -90,7 +93,9 @@ class OAuthStartTests(TestCase):
         params = urllib.parse.parse_qs(urllib.parse.urlsplit(location).query)
         state = params["state"][0]
         signed_pk = TimestampSigner(salt=_STATE_SALT).unsign(state, max_age=600)
-        self.assertEqual(int(signed_pk), self.user.pk)
+        # State discriminator changed with SSO — "user:<pk>" for link-mode,
+        # "anon" for signup-with-Google. Verify we're on the link branch.
+        self.assertEqual(signed_pk, f"user:{self.user.pk}")
 
 
 @override_settings(
@@ -241,7 +246,10 @@ class StatusAndDisconnectTests(TestCase):
             scope="",
         )
         resp = self.client.get(reverse("google-account"))
-        self.assertEqual(resp.json(), {"connected": True, "google_email": "me@gmail.com"})
+        self.assertEqual(
+            resp.json(),
+            {"connected": True, "google_email": "me@gmail.com", "write_calendar_id": "primary"},
+        )
 
     def test_disconnect_deletes_row(self) -> None:
         GoogleAccount.objects.create(
@@ -255,3 +263,331 @@ class StatusAndDisconnectTests(TestCase):
         resp = self.client.delete(reverse("google-account"))
         self.assertEqual(resp.status_code, 204)
         self.assertFalse(GoogleAccount.objects.filter(user=self.user).exists())
+
+
+# ---------------------------------------------------------------------------
+# Booking flows — public link + peer + booking-request approval.
+#
+# These exercise the code the user actually clicks through: the earlier
+# `timezone.now()` NameError in PublicMeetingCreateView would have been
+# caught by test_public_online_booking_creates_event on the very first run.
+# ---------------------------------------------------------------------------
+
+from django.contrib.auth import get_user_model  # noqa: E402
+from django.core import mail  # noqa: E402
+
+from .models import BookingRequest  # noqa: E402
+
+
+def _connect_google(user):
+    """Give `user` a GoogleAccount so _pick_write_provider picks Google."""
+    return GoogleAccount.objects.create(
+        user=user,
+        google_email=user.email,
+        access_token_encrypted=encrypt("AT"),
+        refresh_token_encrypted=encrypt("RT"),
+        expires_at=djtz.now() + timedelta(hours=1),
+        scope="calendar.events calendar.readonly",
+        write_calendar_id="primary",
+    )
+
+
+def _future_slot(hours_from_now: int = 24):
+    start = djtz.now() + timedelta(hours=hours_from_now)
+    end = start + timedelta(minutes=30)
+    return start.isoformat(), end.isoformat()
+
+
+class PublicMeetingOnlineTests(TestCase):
+    """POST /api/public/meetings/<token> with kind='online' — the immediate
+    booking path. Mocks the Google API layer; asserts the view wires all
+    params through correctly and returns 201 with an event payload."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.host = UserModel.objects.create_user(email="host@test.local", password="pwpw12345xyz")
+        self.host.share_enabled = True
+        self.host.save(update_fields=["share_enabled"])
+        _connect_google(self.host)
+        self.client = APIClient()
+
+    def _post(self, **overrides):
+        start, end = _future_slot()
+        body = {
+            "visitor_name": "Alice Visitor",
+            "visitor_email": "alice@example.com",
+            "start": start,
+            "end": end,
+            "kind": "online",
+            "title": "Coffee chat",
+        }
+        body.update(overrides)
+        return self.client.post(
+            reverse("public-meetings-create", args=[str(self.host.share_token)]),
+            body,
+            format="json",
+        )
+
+    def test_online_booking_creates_event_and_returns_201(self):
+        with patch("apps.scheduling.views.create_calendar_event") as mc:
+            mc.return_value = {"id": "abc123", "htmlLink": "https://cal.google.com/e/abc123"}
+            resp = self._post()
+        self.assertEqual(resp.status_code, 201, resp.content)
+        payload = resp.json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["event"]["id"], "abc123")
+        self.assertEqual(payload["event"]["provider"], "google")
+        # Provider was called with the visitor as attendee, on the host's
+        # write_calendar_id (default "primary"), with an online meeting.
+        args, kwargs = mc.call_args
+        self.assertEqual(args[0], self.host)
+        self.assertEqual(kwargs["calendar_id"], "primary")
+        self.assertEqual(kwargs["attendees"], ["alice@example.com"])
+        self.assertTrue(kwargs.get("include_online_meeting", True))
+
+    def test_unknown_token_returns_404(self):
+        resp = self.client.post(
+            reverse("public-meetings-create", args=["00000000-0000-0000-0000-000000000000"]),
+            {},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 404)
+
+    def test_share_disabled_host_returns_404(self):
+        self.host.share_enabled = False
+        self.host.save(update_fields=["share_enabled"])
+        resp = self._post()
+        self.assertEqual(resp.status_code, 404)
+
+    def test_missing_visitor_email_returns_400(self):
+        resp = self._post(visitor_email="not-an-email")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("visitor_email", resp.json())
+
+    def test_honeypot_returns_204_and_does_not_book(self):
+        with patch("apps.scheduling.views.create_calendar_event") as mc:
+            resp = self._post(hp="http://spam.example.com")
+        self.assertEqual(resp.status_code, 204)
+        mc.assert_not_called()
+
+    def test_host_without_provider_returns_409(self):
+        GoogleAccount.objects.filter(user=self.host).delete()
+        resp = self._post()
+        self.assertEqual(resp.status_code, 409)
+        self.assertIn("hasn't set up", resp.json()["detail"])
+
+    def test_past_slot_rejected(self):
+        past_start = (djtz.now() - timedelta(hours=2)).isoformat()
+        past_end = (djtz.now() - timedelta(hours=1)).isoformat()
+        resp = self._post(start=past_start, end=past_end)
+        self.assertEqual(resp.status_code, 400)
+
+
+class PublicMeetingPhysicalTests(TestCase):
+    """kind='physical' opens a BookingRequest for the host to approve —
+    should never touch the calendar API on submission."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.host = UserModel.objects.create_user(email="host@test.local", password="pwpw12345xyz")
+        self.host.share_enabled = True
+        self.host.save(update_fields=["share_enabled"])
+        _connect_google(self.host)  # even with provider connected, physical waits
+        self.client = APIClient()
+
+    def test_physical_booking_creates_request_row_returns_202(self):
+        start, end = _future_slot()
+        with patch("apps.scheduling.views.create_calendar_event") as mc:
+            resp = self.client.post(
+                reverse("public-meetings-create", args=[str(self.host.share_token)]),
+                {
+                    "visitor_name": "Bob Guest",
+                    "visitor_email": "bob@example.com",
+                    "start": start,
+                    "end": end,
+                    "kind": "physical",
+                    "location": "Café Slovanský dům, Prague",
+                    "notes": "Would love to discuss the project.",
+                },
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 202, resp.content)
+        payload = resp.json()
+        self.assertTrue(payload["pending"])
+        mc.assert_not_called()  # no calendar event yet — pending approval
+        req = BookingRequest.objects.get(pk=payload["request_id"])
+        self.assertEqual(req.host, self.host)
+        self.assertEqual(req.status, BookingRequest.Status.PENDING)
+        self.assertEqual(req.location, "Café Slovanský dům, Prague")
+        self.assertEqual(req.visitor_email, "bob@example.com")
+
+    def test_physical_missing_location_returns_400(self):
+        start, end = _future_slot()
+        resp = self.client.post(
+            reverse("public-meetings-create", args=[str(self.host.share_token)]),
+            {
+                "visitor_name": "Bob",
+                "visitor_email": "bob@example.com",
+                "start": start,
+                "end": end,
+                "kind": "physical",
+                # location omitted
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("location", resp.json())
+
+
+class BookingRequestDecideTests(TestCase):
+    """Host approves / rejects a physical booking request."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.host = UserModel.objects.create_user(email="host@test.local", password="pwpw12345xyz")
+        _connect_google(self.host)
+        self.client = APIClient()
+        self.client.force_authenticate(self.host)
+        self.req = BookingRequest.objects.create(
+            host=self.host,
+            visitor_name="Carol",
+            visitor_email="carol@example.com",
+            kind=BookingRequest.Kind.PHYSICAL,
+            start_at=djtz.now() + timedelta(hours=48),
+            end_at=djtz.now() + timedelta(hours=48, minutes=30),
+            title="Coffee",
+            location="Prague",
+        )
+
+    def test_approve_creates_event_and_marks_row(self):
+        with patch("apps.scheduling.views.create_calendar_event") as mc:
+            mc.return_value = {"id": "evt-1"}
+            resp = self.client.post(
+                reverse("booking-requests-decide", args=[self.req.pk]),
+                {"decision": "approve"},
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.req.refresh_from_db()
+        self.assertEqual(self.req.status, BookingRequest.Status.APPROVED)
+        self.assertEqual(self.req.event_id, "evt-1")
+        # Physical meetings don't include a Meet/Teams link — location only.
+        _, kwargs = mc.call_args
+        self.assertFalse(kwargs.get("include_online_meeting", True))
+        self.assertIn("Prague", kwargs["description"])
+
+    def test_reject_marks_row_and_emails_visitor(self):
+        resp = self.client.post(
+            reverse("booking-requests-decide", args=[self.req.pk]),
+            {"decision": "reject", "note": "Sorry, conflict."},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.req.refresh_from_db()
+        self.assertEqual(self.req.status, BookingRequest.Status.REJECTED)
+        self.assertEqual(self.req.decision_note, "Sorry, conflict.")
+        # The rejection email is best-effort — assert either it was sent or
+        # the backend used a no-op backend without raising.
+        recipients = [addr for m in mail.outbox for addr in m.to]
+        # In tests EmailBackend is memory-locmem — mail should have been sent.
+        self.assertIn("carol@example.com", recipients)
+
+    def test_double_decide_is_idempotent(self):
+        self.req.status = BookingRequest.Status.APPROVED
+        self.req.save(update_fields=["status"])
+        resp = self.client.post(
+            reverse("booking-requests-decide", args=[self.req.pk]),
+            {"decision": "approve"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)  # returns current state, no 409
+
+    def test_only_host_can_decide(self):
+        UserModel = get_user_model()
+        other = UserModel.objects.create_user(email="other@test.local", password="pwpw12345xyz")
+        self.client.force_authenticate(other)
+        resp = self.client.post(
+            reverse("booking-requests-decide", args=[self.req.pk]),
+            {"decision": "approve"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 404)  # host-scoped queryset
+
+
+class CreateEventPayloadTests(TestCase):
+    """Regression tests for google_client.create_calendar_event — the JSON
+    shape sent to Google matters (missing conferenceData → no Meet link,
+    missing conferenceDataVersion → Google ignores the createRequest)."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.user = UserModel.objects.create_user(email="c@test.local", password="pwpw12345xyz")
+        _connect_google(self.user)
+
+    def test_online_booking_requests_meet_link(self):
+        from .google_client import create_calendar_event
+        with patch("apps.scheduling.google_client.httpx.Client") as mc:
+            instance = mc.return_value.__enter__.return_value
+            instance.post.return_value.status_code = 200
+            instance.post.return_value.json.return_value = {"id": "e1", "htmlLink": "x"}
+            create_calendar_event(
+                self.user,
+                calendar_id="primary",
+                summary="Test",
+                description="",
+                start_iso="2026-09-02T10:00:00+02:00",
+                end_iso="2026-09-02T10:30:00+02:00",
+                time_zone="Europe/Prague",
+                attendees=["a@b.co"],
+                include_online_meeting=True,
+            )
+        _, kwargs = instance.post.call_args
+        self.assertEqual(kwargs["params"]["conferenceDataVersion"], "1")
+        self.assertIn("conferenceData", kwargs["json"])
+        self.assertEqual(
+            kwargs["json"]["conferenceData"]["createRequest"]["conferenceSolutionKey"]["type"],
+            "hangoutsMeet",
+        )
+
+    def test_physical_booking_skips_meet_link(self):
+        from .google_client import create_calendar_event
+        with patch("apps.scheduling.google_client.httpx.Client") as mc:
+            instance = mc.return_value.__enter__.return_value
+            instance.post.return_value.status_code = 200
+            instance.post.return_value.json.return_value = {"id": "e2"}
+            create_calendar_event(
+                self.user,
+                calendar_id="primary",
+                summary="Test",
+                description="",
+                start_iso="2026-09-02T10:00:00+02:00",
+                end_iso="2026-09-02T10:30:00+02:00",
+                time_zone="Europe/Prague",
+                attendees=["a@b.co"],
+                include_online_meeting=False,
+            )
+        _, kwargs = instance.post.call_args
+        self.assertNotIn("conferenceDataVersion", kwargs["params"])
+        self.assertNotIn("conferenceData", kwargs["json"])
+
+
+class ProviderPickerTests(TestCase):
+    """_pick_write_provider picks Google when both are connected, MS as
+    fallback, None when neither. Direct unit test — cheap to run and covers
+    a decision that changes the entire dispatch."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.user = UserModel.objects.create_user(email="p@test.local", password="pwpw12345xyz")
+
+    def test_none_when_no_provider_connected(self):
+        from .views import _pick_write_provider
+        self.assertIsNone(_pick_write_provider(self.user))
+
+    def test_google_selected_when_only_google_connected(self):
+        from .views import _pick_write_provider
+        _connect_google(self.user)
+        p = _pick_write_provider(self.user)
+        self.assertIsNotNone(p)
+        self.assertEqual(p.name, "google")
+        self.assertEqual(p.write_calendar_id, "primary")

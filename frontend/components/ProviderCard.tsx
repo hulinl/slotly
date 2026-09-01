@@ -10,8 +10,8 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
-import { Plug, Unplug } from "lucide-react";
-import type { WritableCalendar } from "@/lib/google";
+import { AlertCircle, Plug, Unplug } from "lucide-react";
+import { ReconnectRequiredError, type WritableCalendar } from "@/lib/google";
 
 export type ProviderStatus =
   | { connected: false }
@@ -53,6 +53,7 @@ export function ProviderCard({
   const [busy, setBusy] = useState(false);
   const [calendars, setCalendars] = useState<WritableCalendar[] | null>(null);
   const [calendarsError, setCalendarsError] = useState<string | null>(null);
+  const [needsReconnect, setNeedsReconnect] = useState(false);
   const [savingCalendar, setSavingCalendar] = useState(false);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
@@ -60,23 +61,39 @@ export function ProviderCard({
     if (!status.connected) {
       setCalendars(null);
       setCalendarsError(null);
+      setNeedsReconnect(false);
       return;
     }
     let alive = true;
     setCalendarsError(null);
+    setNeedsReconnect(false);
     fetchCalendars()
       .then((list) => {
         if (alive) setCalendars(list);
       })
       .catch((err) => {
-        if (alive) {
-          setCalendarsError(err instanceof Error ? err.message : "Failed to load calendars");
+        if (!alive) return;
+        if (err instanceof ReconnectRequiredError) {
+          setNeedsReconnect(true);
+          return;
         }
+        setCalendarsError(err instanceof Error ? err.message : "Failed to load calendars");
       });
     return () => {
       alive = false;
     };
   }, [status.connected, fetchCalendars]);
+
+  async function reconnect() {
+    setBusy(true);
+    try {
+      await onDisconnect();
+    } catch {
+      /* ignore — we're navigating away anyway */
+    }
+    // Full-page navigation so the OAuth callback cookie rides back correctly.
+    window.location.href = connectUrl;
+  }
 
   async function handleDisconnect() {
     if (!confirm(disconnectConfirmText)) return;
@@ -157,7 +174,28 @@ export function ProviderCard({
         )}
       </ul>
 
-      {status.connected && (
+      {status.connected && needsReconnect && (
+        <div className="mt-6 flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800/60 dark:bg-amber-950/30">
+          <AlertCircle size={16} className="mt-0.5 shrink-0 text-amber-700 dark:text-amber-300" aria-hidden />
+          <div className="flex-1 space-y-2 text-sm text-amber-900 dark:text-amber-100">
+            <p>
+              Slotly recently added a permission to list your calendars.
+              Reconnect once to grant it — takes 5 seconds.
+            </p>
+            <button
+              type="button"
+              onClick={reconnect}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+            >
+              <Plug size={14} aria-hidden />
+              {busy ? "Reconnecting…" : "Reconnect"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {status.connected && !needsReconnect && (
         <div className="mt-6 border-t border-zinc-100 pt-4 dark:border-zinc-800">
           <label
             htmlFor={`${brand}-write-calendar`}
