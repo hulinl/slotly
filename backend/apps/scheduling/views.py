@@ -846,12 +846,17 @@ class BookingRequestDecideView(APIView):
                     {"detail": "You're no longer free at that time — reject and ask them to pick another slot."},
                     status=409,
                 )
-            description = (
-                f"Booked via your Slotly public link by {req.visitor_name} <{req.visitor_email}>."
-                + (f"\n\nLocation: {req.location}" if req.location else "")
-                + (f"\n\nVisitor note:\n{req.notes}" if req.notes else "")
-                + (f"\n\nYour note:\n{note}" if note else "")
-            )
+            # Location moves to the event's first-class `location` field
+            # (Google/Outlook render a Maps deep-link from it), so the free-
+            # form description is left for the visitor's context only.
+            description_parts = [
+                f"Booked via your Slotly public link by {req.visitor_name} <{req.visitor_email}>.",
+            ]
+            if req.notes:
+                description_parts.append(f"\nVisitor note:\n{req.notes}")
+            if note:
+                description_parts.append(f"\nYour note:\n{note}")
+            description = "\n".join(description_parts)
             try:
                 event = provider.create_event(
                     req.host,
@@ -864,6 +869,7 @@ class BookingRequestDecideView(APIView):
                     attendees=[req.visitor_email],
                     # Physical meetings don't need an online meeting link.
                     include_online_meeting=False,
+                    location=req.location,
                 )
             except (GoogleOAuthError, _graph.MicrosoftOAuthError):
                 return Response(
@@ -928,30 +934,53 @@ def _notify_booking_request(host, req) -> None:
 
 
 def _mail_visitor_rejection(req, note: str) -> None:
-    """Send the visitor a short "sorry, can't make it" email. Kept plain
-    text and best-effort — booking approval must not fail because SMTP
-    was flaky."""
+    """Send the visitor a "can't make it" email in both plain text and
+    HTML. Best-effort — approval must not fail because SMTP was flaky."""
     from django.conf import settings as _settings
-    from django.core.mail import send_mail
+    from django.core.mail import EmailMultiAlternatives
+
+    from apps.notifications.emails import blockquote, html_shell, kv_rows, paragraph
 
     when = req.start_at.strftime("%A %d %B, %H:%M")
-    subject = f"Your Slotly meeting request on {when} was declined"
     host_name = f"{req.host.first_name} {req.host.last_name}".strip() or req.host.email
-    body = (
-        f"Hi {req.visitor_name},\n\n"
-        f"{host_name} isn't able to meet {when}."
-    )
+    subject = f"Your Slotly meeting request on {when} was declined"
+
+    text_body = f"Hi {req.visitor_name},\n\n{host_name} isn't able to meet {when}."
     if note:
-        body += f"\n\nNote from {host_name}:\n{note}"
-    body += "\n\nFeel free to pick another slot from their booking page."
+        text_body += f"\n\nNote from {host_name}:\n{note}"
+    text_body += "\n\nFeel free to pick another slot from their booking page."
+
+    intro = paragraph(f"Hi {req.visitor_name},")
+    intro += paragraph(f"{host_name} isn't able to meet on {when}.")
+    intro += kv_rows([
+        ("When", when),
+        ("Where", req.location),
+    ])
+    if note:
+        intro += paragraph(f"Note from {host_name}:")
+        intro += blockquote(note)
+    intro += paragraph(
+        "Feel free to pick another slot from their booking page — no hard feelings.",
+        muted=True,
+    )
+
+    share_link = f"{_settings.FRONTEND_BASE_URL.rstrip('/')}/u/{req.host.share_token}"
+    html_body = html_shell(
+        title=f"{host_name} can't make that time",
+        intro_html=intro,
+        cta_label="Pick another slot",
+        cta_url=share_link,
+    )
+
     try:
-        send_mail(
+        msg = EmailMultiAlternatives(
             subject=f"[Slotly] {subject}",
-            message=body,
+            body=text_body,
             from_email=_settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[req.visitor_email],
-            fail_silently=True,
+            to=[req.visitor_email],
         )
+        msg.attach_alternative(html_body, "text/html")
+        msg.send(fail_silently=True)
     except Exception as exc:  # noqa: BLE001
         logger.warning("visitor rejection mail failed for req %s: %s", req.pk, exc)
 

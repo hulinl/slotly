@@ -15,6 +15,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { MapPin, Video, X as XIcon } from "lucide-react";
+import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { Button, FormError, Input, Label } from "@/components/ui";
 
 export type BookingKind = "online" | "physical";
@@ -253,13 +254,12 @@ export function BookingDialog({
           {kind === "physical" && (
             <div className="space-y-1">
               <Label htmlFor="location">Where</Label>
-              <Input
+              <AddressAutocomplete
                 id="location"
                 value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="Address, meeting room, café…"
+                onChange={setLocation}
+                placeholder="Address, café, meeting room…"
                 required
-                autoComplete="street-address"
               />
             </div>
           )}

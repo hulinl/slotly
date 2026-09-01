@@ -230,6 +230,7 @@ def create_calendar_event(
     time_zone: str,
     attendees: list[str],
     include_online_meeting: bool = True,
+    location: str = "",
 ) -> dict:
     """Create an event on ``calendar_id`` (empty = primary calendar) and
     invite ``attendees``. When ``include_online_meeting`` is True (the
@@ -256,6 +257,10 @@ def create_calendar_event(
             if e
         ],
     }
+    if location:
+        # Graph's location is a nested object; displayName is what shows up
+        # in Outlook and in mobile invites' "location" row.
+        payload["location"] = {"displayName": location}
     if include_online_meeting:
         payload["isOnlineMeeting"] = True
         payload["onlineMeetingProvider"] = "teamsForBusiness"

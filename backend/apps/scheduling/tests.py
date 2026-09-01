@@ -471,10 +471,13 @@ class BookingRequestDecideTests(TestCase):
         self.req.refresh_from_db()
         self.assertEqual(self.req.status, BookingRequest.Status.APPROVED)
         self.assertEqual(self.req.event_id, "evt-1")
-        # Physical meetings don't include a Meet/Teams link — location only.
+        # Physical meetings don't include a Meet/Teams link, and the address
+        # rides on the event's first-class `location` field (not stuffed
+        # inside the free-text description) so Google/Outlook can generate
+        # a Maps deep-link from it.
         _, kwargs = mc.call_args
         self.assertFalse(kwargs.get("include_online_meeting", True))
-        self.assertIn("Prague", kwargs["description"])
+        self.assertEqual(kwargs["location"], "Prague")
 
     def test_reject_marks_row_and_emails_visitor(self):
         resp = self.client.post(

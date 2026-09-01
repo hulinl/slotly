@@ -237,6 +237,7 @@ def create_calendar_event(
     time_zone: str,
     attendees: list[str],
     include_online_meeting: bool = True,
+    location: str = "",
 ) -> dict:
     """
     Create an event on ``calendar_id`` on behalf of ``user`` and email an
@@ -262,6 +263,12 @@ def create_calendar_event(
         "attendees": [{"email": e} for e in attendees if e],
         "reminders": {"useDefault": True},
     }
+    if location:
+        # Google recognises this as a first-class field: Calendar UI shows a
+        # "location" row with a Maps deep-link, and mobile clients (Google
+        # Calendar iOS/Android, Apple Calendar) treat it as a taggable
+        # address for navigation.
+        payload["location"] = location
     params = {"sendUpdates": "all"}
     if include_online_meeting:
         payload["conferenceData"] = {

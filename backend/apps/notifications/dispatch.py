@@ -17,8 +17,9 @@ import logging
 from typing import Callable
 
 from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import EmailMultiAlternatives, send_mail
 
+from .emails import blockquote, html_shell, kv_rows, paragraph
 from .models import Notification
 
 logger = logging.getLogger(__name__)
@@ -118,10 +119,42 @@ _EMAIL_RENDERERS: dict[str, EmailRenderer] = {
     Notification.Type.CALENDAR_SYNC_FAILED: _r_calendar_sync_failed,
     Notification.Type.BOOKING_REQUEST_RECEIVED: lambda p, user: (
         f"{p.get('visitor_name', 'Someone')} wants to meet in person",
-        f"{p.get('visitor_name', 'Someone')} ({p.get('visitor_email', '')}) requested to meet "
-        f"{p.get('when', '')}"
-        + (f" at {p['location']}" if p.get("location") else "")
-        + f".\n\nApprove or reject: {_frontend_base()}/bookings",
+        # Plain-text fallback for clients that ignore the HTML alternative.
+        (
+            f"{p.get('visitor_name', 'Someone')} ({p.get('visitor_email', '')}) requested "
+            f"to meet {p.get('when', '')}"
+            + (f" at {p['location']}" if p.get("location") else "")
+            + f".\n\nApprove or reject: {_frontend_base()}/bookings"
+        ),
+    ),
+}
+
+
+# HTML alternatives — keyed by the same Notification.Type. Absence means
+# "plain text only". When present, `notify` sends both parts via
+# EmailMultiAlternatives so clients that render HTML get the branded
+# layout while text-only clients still see readable content.
+_HTML_RENDERERS: dict[str, Callable[[dict, object], str]] = {
+    Notification.Type.BOOKING_REQUEST_RECEIVED: lambda p, user: html_shell(
+        title="Someone wants to meet you in person",
+        intro_html=(
+            paragraph(
+                f"{p.get('visitor_name', 'Someone')} would like to book time with you."
+            )
+            + kv_rows([
+                ("When", p.get("when", "")),
+                ("Where", p.get("location", "")),
+                ("Email", p.get("visitor_email", "")),
+            ])
+            + paragraph(
+                "Approve to send them a calendar invite, or reject with an "
+                "optional note. Either way we handle the email — you don't "
+                "have to.",
+                muted=True,
+            )
+        ),
+        cta_label="Review request",
+        cta_url=f"{_frontend_base()}/bookings",
     ),
 }
 
@@ -155,13 +188,25 @@ def notify(user, event_type: str, payload: dict, *, send_email: bool = True) -> 
         if renderer is None:
             return
         subject, body = renderer(payload, user)
+        html_renderer = _HTML_RENDERERS.get(event_type)
+        html_body = html_renderer(payload, user) if html_renderer else None
         try:
-            send_mail(
-                subject=f"[Slotly] {subject}",
-                message=body,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
+            if html_body:
+                msg = EmailMultiAlternatives(
+                    subject=f"[Slotly] {subject}",
+                    body=body,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    to=[user.email],
+                )
+                msg.attach_alternative(html_body, "text/html")
+                msg.send(fail_silently=False)
+            else:
+                send_mail(
+                    subject=f"[Slotly] {subject}",
+                    message=body,
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
         except Exception as exc:  # noqa: BLE001 — never block the action over email
             logger.warning("Notification email failed (%s): %s", event_type, exc)
