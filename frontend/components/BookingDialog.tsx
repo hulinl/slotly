@@ -74,6 +74,10 @@ export function BookingDialog({
   const [visitorEmail, setVisitorEmail] = useState("");
   const [kind, setKind] = useState<BookingKind>("online");
   const [location, setLocation] = useState("");
+  // Notes hidden by default — most bookings don't need them, and burying
+  // the textarea behind a "+ Add note" toggle removes ~120px of default
+  // dialog height (biggest single-source of vertical scroll on laptops).
+  const [showNotes, setShowNotes] = useState(false);
   // Honeypot — off-screen text field that legit users never see. Bots
   // that greedily fill every input trip it and get silently 204'd.
   const [hp, setHp] = useState("");
@@ -118,6 +122,7 @@ export function BookingDialog({
     setKind("online");
     setLocation("");
     setHp("");
+    setShowNotes(false);
     const d = ALL_DURATIONS.find((x) => x === defaultDurationMin && x <= intervalLenMin)
       ?? ALL_DURATIONS.filter((x) => x <= intervalLenMin).slice(-1)[0]
       ?? intervalLenMin;
@@ -189,19 +194,19 @@ export function BookingDialog({
     >
       <form
         onSubmit={handleSubmit}
-        className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 sm:rounded-2xl"
+        className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 sm:max-w-lg sm:rounded-2xl"
       >
         {/* Sticky header — bottom-sheet look on mobile, clean on desktop */}
-        <header className="flex items-start gap-3 border-b border-zinc-100 px-5 py-4 dark:border-zinc-800">
-          <div className="flex-1">
-            <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+        <header className="flex items-center gap-3 border-b border-zinc-100 px-5 py-3 dark:border-zinc-800">
+          <div className="flex-1 min-w-0">
+            <h2 className="truncate text-base font-semibold text-zinc-900 dark:text-zinc-50">
               {mode === "public"
                 ? hostName
                   ? `Book time with ${hostName}`
                   : "Book a meeting"
                 : "Create meeting"}
             </h2>
-            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{dayLabel}</p>
+            <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">{dayLabel}</p>
           </div>
           <button
             type="button"
@@ -214,8 +219,10 @@ export function BookingDialog({
           </button>
         </header>
 
-        {/* Scrollable body */}
-        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
+        {/* Body — usually fits without scroll. When it doesn't (small
+            viewport + physical + long start-chip list), a thin theme-aware
+            scrollbar shows rather than the browser's default black bar. */}
+        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4 [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.300)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-zinc-300 [&::-webkit-scrollbar-track]:bg-transparent dark:[scrollbar-color:theme(colors.zinc.700)_transparent] dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700">
           {allowPhysical && (
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
@@ -368,22 +375,33 @@ export function BookingDialog({
             />
           </div>
 
-          <div className="space-y-1">
-            <Label htmlFor="notes">Notes (optional)</Label>
-            <textarea
-              id="notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              maxLength={2000}
-              placeholder={
-                kind === "physical"
-                  ? "Anything the host should know before approving?"
-                  : "Agenda, links, context…"
-              }
-              className="w-full resize-y rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:placeholder:text-zinc-500"
-            />
-          </div>
+          {showNotes ? (
+            <div className="space-y-1">
+              <Label htmlFor="notes">Notes</Label>
+              <textarea
+                id="notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                maxLength={2000}
+                autoFocus
+                placeholder={
+                  kind === "physical"
+                    ? "Anything the host should know before approving?"
+                    : "Agenda, links, context…"
+                }
+                className="w-full resize-y rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 dark:border-zinc-800 dark:bg-zinc-950 dark:placeholder:text-zinc-500"
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowNotes(true)}
+              className="text-xs font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+            >
+              + Add a note
+            </button>
+          )}
 
           {errorMessage && <FormError message={errorMessage} />}
           {successMessage && (
