@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Building2,
   Calendar,
+  CalendarClock,
   LogOut,
   Menu,
   Settings,
@@ -17,6 +18,7 @@ import {
 import { logout } from "@/lib/auth";
 import { Logo } from "./Logo";
 import { NotificationsBell } from "./NotificationsBell";
+import { OnboardingBanner } from "./OnboardingBanner";
 
 // Top-level destinations. Profile is intentionally NOT here — the email
 // link in the top right already opens it, and side-by-side "Profile" +
@@ -34,6 +36,12 @@ const NAV: Array<{ href: string; label: string; icon: LucideIcon; matches: (path
     label: "People",
     icon: Users,
     matches: (p) => p === "/people" || p.startsWith("/people/"),
+  },
+  {
+    href: "/bookings",
+    label: "Bookings",
+    icon: CalendarClock,
+    matches: (p) => p === "/bookings",
   },
   {
     href: "/groups",
@@ -85,6 +93,38 @@ export function AuthedHeader({ email }: { email: string }) {
     router.replace("/");
   }
 
+  return (
+    <>
+      <HeaderInner
+        headerRef={headerRef}
+        menuOpen={menuOpen}
+        setMenuOpen={setMenuOpen}
+        pathname={pathname}
+        email={email}
+        onLogout={onLogout}
+      />
+      <OnboardingBanner />
+    </>
+  );
+}
+
+/** The original header markup, extracted verbatim so `AuthedHeader` can wrap
+ * it with the onboarding banner below without duplicating any structure. */
+function HeaderInner({
+  headerRef,
+  menuOpen,
+  setMenuOpen,
+  pathname,
+  email,
+  onLogout,
+}: {
+  headerRef: React.RefObject<HTMLElement | null>;
+  menuOpen: boolean;
+  setMenuOpen: (v: boolean | ((o: boolean) => boolean)) => void;
+  pathname: string;
+  email: string;
+  onLogout: () => void | Promise<void>;
+}) {
   return (
     <header
       ref={headerRef}

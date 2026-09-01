@@ -10,8 +10,10 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Globe } from "lucide-react";
+import { BookingDialog, type BookingSubmit } from "@/components/BookingDialog";
 import { Logo } from "@/components/Logo";
 import { SlotsCalendar } from "@/components/SlotsCalendar";
+import { createPublicMeeting } from "@/lib/google";
 import {
   colorFromName,
   computeFreeSlots,
@@ -28,6 +30,11 @@ export default function PublicProfilePage() {
 
   const [data, setData] = useState<PublicProfileResponse | null>(null);
   const [error, setError] = useState<"not_found" | "load" | null>(null);
+
+  const [bookingInterval, setBookingInterval] = useState<{ start: Date; end: Date } | null>(null);
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
+  const [bookingSuccess, setBookingSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -148,14 +155,84 @@ export default function PublicProfilePage() {
             No free time in the upcoming weeks.
           </div>
         ) : (
-          <SlotsCalendar
-            slots={slots}
-            durationMin={30}
-            holidays={holidayMap}
-            workingHoursRange={workingHoursRangeFromHours(data.profile.working_hours)}
-          />
+          <>
+            {data.booking_enabled === false && (
+              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+                <p className="font-medium">
+                  {display_name} isn&apos;t accepting direct bookings yet.
+                </p>
+                <p className="mt-1 text-amber-800 dark:text-amber-200/80">
+                  You can still see their availability below — reach out
+                  another way to arrange a time.
+                </p>
+              </div>
+            )}
+            <SlotsCalendar
+              slots={slots}
+              durationMin={30}
+              holidays={holidayMap}
+              workingHoursRange={workingHoursRangeFromHours(data.profile.working_hours)}
+              onIntervalClick={
+                data.booking_enabled === false
+                  ? undefined
+                  : (iv) => {
+                      setBookingError(null);
+                      setBookingSuccess(null);
+                      setBookingInterval(iv);
+                    }
+              }
+            />
+          </>
         )}
       </section>
+
+      <BookingDialog
+        open={bookingInterval !== null}
+        onClose={() => setBookingInterval(null)}
+        interval={bookingInterval}
+        mode="public"
+        hostName={display_name}
+        defaultTitle={`Meeting with ${display_name}`}
+        allowPhysical
+        submitting={bookingSubmitting}
+        errorMessage={bookingError}
+        successMessage={bookingSuccess}
+        onSubmit={async (v: BookingSubmit) => {
+          setBookingSubmitting(true);
+          setBookingError(null);
+          setBookingSuccess(null);
+          try {
+            const result = await createPublicMeeting({
+              token,
+              visitorName: v.visitorName ?? "",
+              visitorEmail: v.visitorEmail ?? "",
+              start: v.startIso,
+              end: v.endIso,
+              title: v.title,
+              notes: v.notes,
+              kind: v.kind,
+              location: v.location,
+            });
+            if ("pending" in result && result.pending) {
+              setBookingSuccess(
+                `Request sent. ${display_name} will confirm or decline — you'll get an email either way.`,
+              );
+            } else {
+              setBookingSuccess("Booked. Check your inbox for the invite.");
+            }
+            setTimeout(() => {
+              setBookingInterval(null);
+              setBookingSuccess(null);
+              // Re-fetch so the just-booked window shows up as busy.
+              getPublicProfile(token).then(setData).catch(() => {});
+            }, 2200);
+          } catch (err) {
+            setBookingError(err instanceof Error ? err.message : "Couldn't create meeting");
+          } finally {
+            setBookingSubmitting(false);
+          }
+        }}
+      />
     </main>
   );
 }

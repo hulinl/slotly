@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { getSession, logout, signup, needsEmailVerification } from "@/lib/auth";
 import { Button, FormError, Input, Label } from "@/components/ui";
+import { OrSeparator, SsoButtons } from "@/components/GoogleSsoButton";
 
 export default function RegisterPage() {
   return (
@@ -113,6 +114,8 @@ function RegisterPageInner() {
         <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Create your account</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">Free, no credit card.</p>
       </div>
+      <SsoButtons verb="Sign up" />
+      <OrSeparator />
       <form onSubmit={onSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="email">Email</Label>

@@ -1,9 +1,47 @@
 from django.urls import path
 
-from .views import GoogleAccountStatusView, OAuthStartView, oauth_callback
+from .views import (
+    BookingRequestDecideView,
+    BookingRequestListView,
+    GoogleAccountStatusView,
+    MeetingCreateView,
+    MicrosoftAccountStatusView,
+    MicrosoftOAuthStartView,
+    MicrosoftWritableCalendarsView,
+    OAuthStartView,
+    PublicMeetingCreateView,
+    WritableCalendarsView,
+    microsoft_oauth_callback,
+    oauth_callback,
+)
 
 urlpatterns = [
     path("oauth/google/start", OAuthStartView.as_view(), name="google-oauth-start"),
     path("oauth/google/callback", oauth_callback, name="google-oauth-callback"),
     path("google-account", GoogleAccountStatusView.as_view(), name="google-account"),
+    path(
+        "google-account/writable-calendars",
+        WritableCalendarsView.as_view(),
+        name="google-account-writable-calendars",
+    ),
+    path("oauth/microsoft/start", MicrosoftOAuthStartView.as_view(), name="microsoft-oauth-start"),
+    path("oauth/microsoft/callback", microsoft_oauth_callback, name="microsoft-oauth-callback"),
+    path("microsoft-account", MicrosoftAccountStatusView.as_view(), name="microsoft-account"),
+    path(
+        "microsoft-account/writable-calendars",
+        MicrosoftWritableCalendarsView.as_view(),
+        name="microsoft-account-writable-calendars",
+    ),
+    path("meetings", MeetingCreateView.as_view(), name="meetings-create"),
+    path(
+        "public/meetings/<uuid:token>",
+        PublicMeetingCreateView.as_view(),
+        name="public-meetings-create",
+    ),
+    path("booking-requests", BookingRequestListView.as_view(), name="booking-requests-list"),
+    path(
+        "booking-requests/<int:pk>/decide",
+        BookingRequestDecideView.as_view(),
+        name="booking-requests-decide",
+    ),
 ]

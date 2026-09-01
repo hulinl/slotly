@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, type FormEvent } from "react";
 import { getSession, login, logout, needsEmailVerification } from "@/lib/auth";
 import { Button, FormError, Input, Label } from "@/components/ui";
+import { OrSeparator, SsoButtons } from "@/components/GoogleSsoButton";
 
 /** Only allow same-origin path redirects to keep the next= parameter from
  * being abused as an open redirect. */
@@ -112,6 +113,8 @@ function LoginPageInner() {
         <h1 className="text-xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Sign in</h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">Welcome back.</p>
       </div>
+      <SsoButtons verb="Sign in" />
+      <OrSeparator />
       <form onSubmit={onSubmit} className="space-y-4">
         <div className="space-y-1.5">
           <Label htmlFor="email">Email</Label>

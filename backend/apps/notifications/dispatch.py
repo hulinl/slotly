@@ -116,6 +116,13 @@ _EMAIL_RENDERERS: dict[str, EmailRenderer] = {
     Notification.Type.TEAM_ROLE_DEMOTED: _r_role_demoted,
     Notification.Type.TEAM_DELETED: _r_team_deleted,
     Notification.Type.CALENDAR_SYNC_FAILED: _r_calendar_sync_failed,
+    Notification.Type.BOOKING_REQUEST_RECEIVED: lambda p, user: (
+        f"{p.get('visitor_name', 'Someone')} wants to meet in person",
+        f"{p.get('visitor_name', 'Someone')} ({p.get('visitor_email', '')}) requested to meet "
+        f"{p.get('when', '')}"
+        + (f" at {p['location']}" if p.get("location") else "")
+        + f".\n\nApprove or reject: {_frontend_base()}/bookings",
+    ),
 }
 
 

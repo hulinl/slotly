@@ -51,6 +51,7 @@ export function SlotsCalendar({
   unavailabilityBlocks,
   onDeleteUnavailability,
   stickyView = false,
+  onIntervalClick,
 }: {
   slots: Slot[];
   durationMin: number;
@@ -74,6 +75,11 @@ export function SlotsCalendar({
    * user's current viewStart untouched. Default false keeps the existing
    * "jump to first result on every change" behavior for pages like /search. */
   stickyView?: boolean;
+  /** When provided, clicking a free-interval block calls this instead of
+   * the default clipboard-copy behavior. The interval spans the whole free
+   * window on that day (potentially many hours) — the receiver picks the
+   * actual meeting sub-slot. */
+  onIntervalClick?: (interval: { start: Date; end: Date }) => void;
 }) {
   const intervalsByDay = useMemo(() => groupAndMerge(slots), [slots]);
   const blocksByDay = useMemo(
@@ -391,14 +397,22 @@ export function SlotsCalendar({
                     key={i}
                     className="absolute inset-x-1 cursor-pointer overflow-hidden rounded border border-emerald-300 bg-emerald-100 px-1 py-0.5 text-[11px] leading-tight text-emerald-900 transition-colors hover:bg-emerald-200 dark:border-emerald-700/60 dark:bg-emerald-900/40 dark:text-emerald-100 dark:hover:bg-emerald-900/60"
                     style={{ top, height }}
-                    title={`Free for a ${durationMin}-min meeting any time between ${formatHM(iv.start)} and ${formatHM(iv.end)}.\nLatest possible start: ${formatHM(new Date(iv.end.getTime() - durationMin * 60_000))}.\nClick to copy.`}
-                    onClick={() =>
+                    title={
+                      onIntervalClick
+                        ? `Free for a ${durationMin}-min meeting any time between ${formatHM(iv.start)} and ${formatHM(iv.end)}.\nLatest possible start: ${formatHM(new Date(iv.end.getTime() - durationMin * 60_000))}.\nClick to book.`
+                        : `Free for a ${durationMin}-min meeting any time between ${formatHM(iv.start)} and ${formatHM(iv.end)}.\nLatest possible start: ${formatHM(new Date(iv.end.getTime() - durationMin * 60_000))}.\nClick to copy.`
+                    }
+                    onClick={() => {
+                      if (onIntervalClick) {
+                        onIntervalClick({ start: iv.start, end: iv.end });
+                        return;
+                      }
                       navigator.clipboard
                         ?.writeText(
                           `${day.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}, ${formatHM(iv.start)}–${formatHM(iv.end)} free`,
                         )
-                        .catch(() => {})
-                    }
+                        .catch(() => {});
+                    }}
                   >
                     <div className="font-medium">
                       {formatHM(iv.start)} – {formatHM(iv.end)}

@@ -30,6 +30,9 @@ class Notification(models.Model):
         # connection-related (M22)
         CONNECTION_REQUESTED = "connection.requested", "Someone wants to connect with you"
         CONNECTION_ACCEPTED = "connection.accepted", "Your connection request was accepted"
+        # booking-related — physical (in-person) meetings need host approval
+        # before they become calendar events; online bookings skip this path.
+        BOOKING_REQUEST_RECEIVED = "booking.request_received", "Someone wants to meet in person"
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,

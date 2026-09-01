@@ -9,7 +9,15 @@
 
 export type GoogleAccountStatus =
   | { connected: false }
-  | { connected: true; google_email: string };
+  | { connected: true; google_email: string; write_calendar_id: string };
+
+export type WritableCalendar = {
+  id: string;
+  summary: string;
+  primary: boolean;
+  access_role: "owner" | "writer" | string;
+  time_zone: string;
+};
 
 function csrfHeader(): Record<string, string> {
   if (typeof document === "undefined") return {};
@@ -23,6 +31,17 @@ export async function getGoogleAccount(): Promise<GoogleAccountStatus> {
   return (await res.json()) as GoogleAccountStatus;
 }
 
+/** True when the logged-in user has any OAuth-connected calendar we can
+ * write to (Google today; Microsoft when connected). Feeds the pre-flight
+ * "connect Google to book" hint on /people/[id]. */
+export async function hasWritableProvider(): Promise<boolean> {
+  const [g, m] = await Promise.all([
+    getGoogleAccount().catch(() => ({ connected: false as const })),
+    getMicrosoftAccount().catch(() => ({ connected: false as const })),
+  ]);
+  return g.connected || m.connected;
+}
+
 export async function disconnectGoogleAccount(): Promise<void> {
   const res = await fetch("/api/google-account", {
     method: "DELETE",
@@ -32,6 +51,239 @@ export async function disconnectGoogleAccount(): Promise<void> {
   if (!res.ok) throw new Error(`status ${res.status}`);
 }
 
+export async function setWriteCalendar(
+  writeCalendarId: string,
+): Promise<GoogleAccountStatus> {
+  const res = await fetch("/api/google-account", {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
+    body: JSON.stringify({ write_calendar_id: writeCalendarId }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: string };
+    throw new Error(body.detail ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as GoogleAccountStatus;
+}
+
+export async function getWritableCalendars(): Promise<WritableCalendar[]> {
+  const res = await fetch("/api/google-account/writable-calendars", {
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: string };
+    throw new Error(body.detail ?? `HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { calendars: WritableCalendar[] };
+  return data.calendars;
+}
+
+// ---------------------------------------------------------------------------
+// Meeting creation
+// ---------------------------------------------------------------------------
+
+export type CreatedMeeting = {
+  ok: true;
+  event: { id: string; html_link?: string; start: string; end: string };
+};
+
+/** Authenticated peer booking — /people/[id] SlotsCalendar → this. */
+export async function createMeetingWithPeer(input: {
+  peerUserId: number;
+  start: string; // ISO 8601 (may include tz or be local)
+  end: string;
+  title?: string;
+  notes?: string;
+}): Promise<CreatedMeeting> {
+  const res = await fetch("/api/meetings", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
+    body: JSON.stringify({
+      peer_user_id: input.peerUserId,
+      start: input.start,
+      end: input.end,
+      title: input.title,
+      notes: input.notes,
+    }),
+  });
+  const body = (await res.json().catch(() => ({}))) as {
+    detail?: string;
+    ok?: boolean;
+    event?: CreatedMeeting["event"];
+  };
+  if (!res.ok || !body.ok || !body.event) {
+    throw new Error(body.detail ?? `HTTP ${res.status}`);
+  }
+  return { ok: true, event: body.event };
+}
+
+export type PublicBookingResult =
+  | CreatedMeeting
+  | { ok: true; pending: true; request_id: number };
+
+/** Public share booking — /u/[token] SlotsCalendar → this. No auth. When
+ * `kind` is "physical", the backend creates a pending BookingRequest
+ * instead of a calendar event; the response then carries `pending: true`
+ * so the caller can show "waiting for approval" copy. */
+export async function createPublicMeeting(input: {
+  token: string;
+  visitorName: string;
+  visitorEmail: string;
+  start: string;
+  end: string;
+  title?: string;
+  notes?: string;
+  kind?: "online" | "physical";
+  location?: string;
+  /** Honeypot field. Leave empty; if a script populates every text field
+   * it fills this too and the backend silently drops the request. */
+  hp?: string;
+}): Promise<PublicBookingResult> {
+  const res = await fetch(`/api/public/meetings/${input.token}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      visitor_name: input.visitorName,
+      visitor_email: input.visitorEmail,
+      start: input.start,
+      end: input.end,
+      title: input.title,
+      notes: input.notes,
+      kind: input.kind ?? "online",
+      location: input.location ?? "",
+      hp: input.hp ?? "",
+    }),
+  });
+  if (res.status === 204) {
+    // Honeypot triggered — mimic success so bots don't learn.
+    return { ok: true, event: { id: "", start: input.start, end: input.end } };
+  }
+  const body = (await res.json().catch(() => ({}))) as {
+    detail?: string;
+    ok?: boolean;
+    pending?: boolean;
+    request_id?: number;
+    event?: CreatedMeeting["event"];
+  };
+  if (!res.ok || !body.ok) {
+    throw new Error(body.detail ?? `HTTP ${res.status}`);
+  }
+  if (body.pending && body.request_id) {
+    return { ok: true, pending: true, request_id: body.request_id };
+  }
+  if (body.event) {
+    return { ok: true, event: body.event };
+  }
+  throw new Error("Unexpected response shape");
+}
+
+// ---------------------------------------------------------------------------
+// Booking requests (host side — /bookings page)
+// ---------------------------------------------------------------------------
+
+export type BookingRequestRow = {
+  id: number;
+  kind: "physical";
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  start: string;
+  end: string;
+  title: string;
+  notes: string;
+  location: string;
+  visitor_name: string;
+  visitor_email: string;
+  decision_note: string;
+  created_at: string;
+  decided_at: string | null;
+};
+
+export async function listBookingRequests(
+  status: "pending" | "all" = "pending",
+): Promise<BookingRequestRow[]> {
+  const res = await fetch(`/api/booking-requests?status=${status}`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const body = (await res.json()) as { requests: BookingRequestRow[] };
+  return body.requests;
+}
+
+export async function decideBookingRequest(
+  id: number,
+  decision: "approve" | "reject",
+  note?: string,
+): Promise<BookingRequestRow> {
+  const res = await fetch(`/api/booking-requests/${id}/decide`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
+    body: JSON.stringify({ decision, note: note ?? "" }),
+  });
+  const body = (await res.json().catch(() => ({}))) as
+    | BookingRequestRow
+    | { detail?: string };
+  if (!res.ok) {
+    throw new Error(("detail" in body && body.detail) || `HTTP ${res.status}`);
+  }
+  return body as BookingRequestRow;
+}
+
 /** Absolute URL we navigate the top-level browser to. The backend issues a
  * 302 to Google's consent screen, then bounces back here. */
 export const GOOGLE_CONNECT_URL = "/api/oauth/google/start";
+
+// ---------------------------------------------------------------------------
+// Microsoft (parallel of the Google helpers above — same endpoint shape).
+// Lives in this file so a caller can treat both providers with one import.
+// ---------------------------------------------------------------------------
+
+export type MicrosoftAccountStatus =
+  | { connected: false }
+  | { connected: true; microsoft_email: string; write_calendar_id: string };
+
+export const MICROSOFT_CONNECT_URL = "/api/oauth/microsoft/start";
+
+export async function getMicrosoftAccount(): Promise<MicrosoftAccountStatus> {
+  const res = await fetch("/api/microsoft-account", { credentials: "include" });
+  if (!res.ok) throw new Error(`status ${res.status}`);
+  return (await res.json()) as MicrosoftAccountStatus;
+}
+
+export async function disconnectMicrosoftAccount(): Promise<void> {
+  const res = await fetch("/api/microsoft-account", {
+    method: "DELETE",
+    credentials: "include",
+    headers: { ...csrfHeader() },
+  });
+  if (!res.ok) throw new Error(`status ${res.status}`);
+}
+
+export async function setMicrosoftWriteCalendar(
+  writeCalendarId: string,
+): Promise<MicrosoftAccountStatus> {
+  const res = await fetch("/api/microsoft-account", {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
+    body: JSON.stringify({ write_calendar_id: writeCalendarId }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: string };
+    throw new Error(body.detail ?? `HTTP ${res.status}`);
+  }
+  return (await res.json()) as MicrosoftAccountStatus;
+}
+
+export async function getMicrosoftWritableCalendars(): Promise<WritableCalendar[]> {
+  const res = await fetch("/api/microsoft-account/writable-calendars", {
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: string };
+    throw new Error(body.detail ?? `HTTP ${res.status}`);
+  }
+  const data = (await res.json()) as { calendars: WritableCalendar[] };
+  return data.calendars;
+}

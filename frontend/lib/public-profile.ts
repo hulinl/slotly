@@ -18,6 +18,11 @@ export type PublicProfileResponse = {
   window: { start: string; end: string };
   busy: BusyInterval[];
   holidays: { date: string; name: string }[];
+  /** Whether the host has an OAuth-connected calendar we can write events
+   * into. Only present on /api/public/profile/<token>. False for other
+   * availability endpoints (they're consumed by authed views that make
+   * their own connect-status calls). */
+  booking_enabled?: boolean;
 };
 
 export class PublicProfileNotFoundError extends Error {

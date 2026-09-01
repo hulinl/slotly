@@ -5,10 +5,12 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { BackButton } from "@/components/BackButton";
+import { BookingDialog, type BookingSubmit } from "@/components/BookingDialog";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { SlotsCalendar } from "@/components/SlotsCalendar";
 import { Button, FormError } from "@/components/ui";
 import { getSession } from "@/lib/auth";
+import { createMeetingWithPeer, hasWritableProvider } from "@/lib/google";
 import { WEEKDAYS, type Weekday } from "@/lib/me";
 import {
   computeFreeSlots,
@@ -49,6 +51,26 @@ export default function TeammateProfilePage() {
   const [intersectionSlots, setIntersectionSlots] = useState<Slot[] | null>(null);
   const [intersectionError, setIntersectionError] = useState<string | null>(null);
   const [intersectionLoading, setIntersectionLoading] = useState(false);
+
+  const [bookingInterval, setBookingInterval] = useState<{ start: Date; end: Date } | null>(null);
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
+  const [bookingSuccess, setBookingSuccess] = useState<string | null>(null);
+  const [canBook, setCanBook] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    hasWritableProvider()
+      .then((ok) => {
+        if (alive) setCanBook(ok);
+      })
+      .catch(() => {
+        if (alive) setCanBook(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const isMe = meId !== null && meId === userId;
 
@@ -132,6 +154,38 @@ export default function TeammateProfilePage() {
 
   const displayedSlots = showIntersection ? intersectionSlots ?? [] : ownSlots;
   const displayedError = showIntersection ? intersectionError : searchError;
+
+  const peerDisplayName = user
+    ? [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || user.email
+    : "";
+
+  async function onBookingSubmit(v: BookingSubmit) {
+    if (!user) return;
+    setBookingSubmitting(true);
+    setBookingError(null);
+    setBookingSuccess(null);
+    try {
+      await createMeetingWithPeer({
+        peerUserId: user.id,
+        start: v.startIso,
+        end: v.endIso,
+        title: v.title,
+        notes: v.notes,
+      });
+      setBookingSuccess("Meeting created — invite sent.");
+      // Refresh the intersection view so the just-booked slot is no longer
+      // shown as free (the calendar sync will confirm in the next poll).
+      setIntersectionSlots(null);
+      setTimeout(() => {
+        setBookingInterval(null);
+        setBookingSuccess(null);
+      }, 1500);
+    } catch (err) {
+      setBookingError(err instanceof Error ? err.message : "Couldn't create meeting");
+    } finally {
+      setBookingSubmitting(false);
+    }
+  }
 
   if (!meEmail) {
     return (
@@ -241,6 +295,17 @@ export default function TeammateProfilePage() {
               </button>
             </label>
             {displayedError && <FormError message={displayedError} />}
+            {canBook === false && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+                <p>
+                  Connect Google Calendar in{" "}
+                  <Link href="/settings/integrations" className="font-medium underline">
+                    Settings → Integrations
+                  </Link>{" "}
+                  to book meetings directly from here.
+                </p>
+              </div>
+            )}
             {!availability ? (
               <CardSkeleton rows={6} />
             ) : (
@@ -250,6 +315,15 @@ export default function TeammateProfilePage() {
                 holidays={holidays}
                 workingHoursRange={workingHoursRangeFromHours(user.working_hours)}
                 stickyView
+                onIntervalClick={
+                  canBook
+                    ? (iv) => {
+                        setBookingError(null);
+                        setBookingSuccess(null);
+                        setBookingInterval(iv);
+                      }
+                    : undefined
+                }
               />
             )}
             <div className="flex justify-end">
@@ -261,6 +335,19 @@ export default function TeammateProfilePage() {
             </div>
           </section>
         )}
+
+        <BookingDialog
+          open={bookingInterval !== null}
+          onClose={() => setBookingInterval(null)}
+          interval={bookingInterval}
+          mode="authed"
+          defaultTitle={peerDisplayName ? `Meeting with ${peerDisplayName}` : "Meeting"}
+          defaultDurationMin={showIntersection ? INTERSECTION_DURATION_MIN : 30}
+          submitting={bookingSubmitting}
+          errorMessage={bookingError}
+          successMessage={bookingSuccess}
+          onSubmit={onBookingSubmit}
+        />
 
         {/* working hours — context after the calendar */}
         <section className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">

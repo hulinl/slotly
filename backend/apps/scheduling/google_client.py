@@ -188,3 +188,97 @@ def bearer_session(creds: _Credentials) -> httpx.Client:
         headers={"Authorization": f"Bearer {creds.access_token}"},
         timeout=30.0,
     )
+
+
+class GoogleApiError(RuntimeError):
+    """A Calendar API call returned non-2xx. `status` mirrors the HTTP code
+    so callers can 502/503/etc. distinguish auth from user error."""
+
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+
+
+def list_writable_calendars(user) -> list[dict]:
+    """
+    Returns the user's calendarList entries filtered to ones we can write
+    events into (accessRole owner or writer). Each item: {id, summary,
+    primary, accessRole, timeZone}. Empty list is a valid result — the user
+    is connected but has no writable calendars, so booking should be
+    disabled until they grant access to one.
+    """
+    creds = get_credentials(user)
+    with bearer_session(creds) as client:
+        r = client.get("/calendar/v3/users/me/calendarList")
+    if r.status_code != 200:
+        raise GoogleApiError(r.status_code, f"calendarList: {r.text[:200]}")
+    items = r.json().get("items", [])
+    return [
+        {
+            "id": it["id"],
+            "summary": it.get("summary", ""),
+            "primary": bool(it.get("primary", False)),
+            "access_role": it.get("accessRole", ""),
+            "time_zone": it.get("timeZone", ""),
+        }
+        for it in items
+        if it.get("accessRole") in ("owner", "writer")
+    ]
+
+
+def create_calendar_event(
+    user,
+    *,
+    calendar_id: str,
+    summary: str,
+    description: str,
+    start_iso: str,
+    end_iso: str,
+    time_zone: str,
+    attendees: list[str],
+    include_online_meeting: bool = True,
+) -> dict:
+    """
+    Create an event on ``calendar_id`` on behalf of ``user`` and email an
+    invite to ``attendees``. Returns the parsed event JSON (Google fills id,
+    htmlLink, hangoutLink, iCalUID).
+
+    When ``include_online_meeting`` is True (default — "always online" per
+    the product default), a Google Meet link is generated and appears both
+    in the invite email and on ``event.hangoutLink`` in the response. The
+    ``conferenceDataVersion=1`` query param is required for Google to
+    honour the ``conferenceData.createRequest`` field.
+
+    Times must be ISO 8601 datetimes. ``time_zone`` is the IANA name that
+    Google displays alongside — pass the user's app TZ for consistency.
+    """
+    import uuid as _uuid
+
+    payload: dict = {
+        "summary": summary,
+        "description": description,
+        "start": {"dateTime": start_iso, "timeZone": time_zone},
+        "end": {"dateTime": end_iso, "timeZone": time_zone},
+        "attendees": [{"email": e} for e in attendees if e],
+        "reminders": {"useDefault": True},
+    }
+    params = {"sendUpdates": "all"}
+    if include_online_meeting:
+        payload["conferenceData"] = {
+            "createRequest": {
+                "requestId": _uuid.uuid4().hex,
+                "conferenceSolutionKey": {"type": "hangoutsMeet"},
+            }
+        }
+        params["conferenceDataVersion"] = "1"
+
+    creds = get_credentials(user)
+    with bearer_session(creds) as client:
+        r = client.post(
+            f"/calendar/v3/calendars/{calendar_id}/events",
+            params=params,
+            json=payload,
+        )
+    if r.status_code not in (200, 201):
+        raise GoogleApiError(r.status_code, f"events.insert: {r.text[:300]}")
+    return r.json()

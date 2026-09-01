@@ -9,7 +9,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { CalendarOff, ExternalLink, Globe, Settings as SettingsIcon, Trash2 } from "lucide-react";
+import { CalendarOff, Check, Copy, ExternalLink, Globe, Link2, RefreshCw, Settings as SettingsIcon, Trash2 } from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { DatePicker } from "@/components/DatePicker";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
@@ -23,7 +23,7 @@ import {
   UnavailabilityApiError,
   type Unavailability,
 } from "@/lib/availability";
-import { getMe, type Me } from "@/lib/me";
+import { getMe, patchMe, regenerateShareToken, type Me } from "@/lib/me";
 import {
   colorFromName,
   computeFreeSlots,
@@ -154,14 +154,14 @@ export default function ProfilePage() {
             </div>
           </div>
           <p className="mt-4 text-xs text-zinc-500 dark:text-zinc-400">
-            This is what people see on your public link. Toggle sharing in
-            <Link href="/settings?from=profile" className="font-medium underline">
-              {" "}
-              Settings
-            </Link>
-            .
+            This is what people see on your public link.
           </p>
         </section>
+
+        {/* Public booking link — front-and-center so users know they have
+            one and how to share it. Above the calendar because the calendar
+            *is* what people see when they open the link. */}
+        <ShareLinkCard me={me} onMeChanged={setMe} />
 
         {/* Availability calendar with inline unavailability blocks */}
         <section className="space-y-3">
@@ -236,6 +236,159 @@ export default function ProfilePage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Share link card — enables the public /u/<token> URL, offers copy /
+// open / regenerate. Also updates the /profile-level `me` cache so the
+// identity card's "View public link" button reflects live state.
+// ---------------------------------------------------------------------------
+
+function ShareLinkCard({
+  me,
+  onMeChanged,
+}: {
+  me: Me;
+  onMeChanged: (m: Me) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const publicUrl = origin ? `${origin}/u/${me.share_token}` : "";
+
+  async function onToggle(next: boolean) {
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await patchMe({ share_enabled: next });
+      onMeChanged(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't update sharing");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCopy() {
+    try {
+      await navigator.clipboard.writeText(publicUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError("Couldn't copy — select the link manually.");
+    }
+  }
+
+  async function onRegenerate() {
+    if (
+      !confirm(
+        "Generate a new public link? The current one will stop working immediately — anyone with it will get a 'not found' page.",
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await regenerateShareToken();
+      onMeChanged(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't regenerate link");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <header className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <Link2 className="h-4 w-4 text-indigo-600 dark:text-indigo-400" aria-hidden />
+          <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+            Your public booking link
+          </h2>
+        </div>
+        <label className="flex shrink-0 items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+          <span>{me.share_enabled ? "On" : "Off"}</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={me.share_enabled}
+            disabled={busy}
+            onClick={() => onToggle(!me.share_enabled)}
+            className={
+              "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-zinc-950 " +
+              (me.share_enabled ? "bg-indigo-600" : "bg-zinc-300 dark:bg-zinc-700")
+            }
+          >
+            <span
+              className={
+                "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform " +
+                (me.share_enabled ? "translate-x-[18px]" : "translate-x-0.5")
+              }
+            />
+          </button>
+        </label>
+      </header>
+
+      {me.share_enabled ? (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
+              {publicUrl || "…"}
+            </code>
+            <button
+              type="button"
+              onClick={onCopy}
+              disabled={!publicUrl}
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+            <a
+              href={publicUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Open
+            </a>
+            <button
+              type="button"
+              onClick={onRegenerate}
+              disabled={busy}
+              title="Invalidate the current link and mint a new one"
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200 dark:hover:bg-zinc-900"
+            >
+              <RefreshCw className="h-4 w-4" />
+              Regenerate
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+            Anyone with this link can see your free/busy times for the next
+            8 weeks and — when you have a calendar connected — book you.
+          </p>
+        </>
+      ) : (
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Turn on sharing to get a public link like{" "}
+          <code className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs dark:bg-zinc-800">
+            /u/{me.share_token.slice(0, 8)}…
+          </code>{" "}
+          that you can put in email signatures, LinkedIn, or share with clients.
+        </p>
+      )}
+
+      {error && (
+        <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 

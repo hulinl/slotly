@@ -14,6 +14,7 @@ export const NOTIFICATION_EVENTS = [
   "calendar.sync_failed",
   "connection.requested",
   "connection.accepted",
+  "booking.request_received",
 ] as const;
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
@@ -96,6 +97,10 @@ export function renderNotification(n: Notification): RenderedNotification {
     calendar_name?: string;
     from_email?: string;
     by_email?: string;
+    visitor_name?: string;
+    visitor_email?: string;
+    when?: string;
+    location?: string;
   };
   const teamLink = p.team_id !== undefined ? `/groups/${p.team_id}` : undefined;
   switch (n.type) {
@@ -160,6 +165,11 @@ export function renderNotification(n: Notification): RenderedNotification {
         text: `${p.by_email ?? "Someone"} accepted your connection request.`,
         href: "/connections",
       };
+    case "booking.request_received":
+      return {
+        text: `${p.visitor_name ?? "Someone"} wants to meet in person${p.when ? ` on ${p.when}` : ""}.`,
+        href: "/bookings",
+      };
   }
 }
 
@@ -177,4 +187,5 @@ export const EVENT_LABELS: Record<NotificationEvent, string> = {
   "calendar.sync_failed": "A calendar's sync is failing",
   "connection.requested": "Someone wants to connect with you",
   "connection.accepted": "Your connection request was accepted",
+  "booking.request_received": "Someone wants to meet in person",
 };

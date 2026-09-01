@@ -420,7 +420,26 @@ class PublicProfileView(APIView):
                 for s, e in busy
             ],
             "holidays": _holidays_in_range(user.country, window_start.date(), window_end.date()),
+            # Public flag consumed by /u/<token>. When False, the frontend
+            # shows a soft "not yet accepting online bookings" banner and
+            # hides the booking dialog.
+            "booking_enabled": _has_writable_provider(user),
         })
+
+
+def _has_writable_provider(user) -> bool:
+    """True if `user` has at least one OAuth-connected calendar we can write
+    events into. Right now that's Google; adding Microsoft (or others) later
+    just extends this check — everything above (public flag, /people hint,
+    booking endpoints) then picks the change up automatically."""
+    from apps.scheduling.models import GoogleAccount
+    if GoogleAccount.objects.filter(user=user).exists():
+        return True
+    try:
+        from apps.scheduling.models import MicrosoftAccount  # optional in early builds
+    except ImportError:  # noqa: BLE001
+        return False
+    return MicrosoftAccount.objects.filter(user=user).exists()
 
 
 def _holidays_in_range(country: str, from_date, to_date) -> list[dict]:

@@ -245,4 +245,30 @@ GOOGLE_OAUTH_SCOPES = [
     "https://www.googleapis.com/auth/calendar.freebusy",
     "openid",
     "email",
+    # profile grants us given_name / family_name for SSO signup so the new
+    # user's first_name / last_name aren't blank on first login.
+    "profile",
+]
+
+# --- Microsoft 365 / Outlook OAuth (M18b) ---
+# Azure AD "app registration" client. Use the "common" tenant when
+# registering the redirect URI so both work-school (M365) and personal
+# (outlook.com) accounts can sign in. Empty defaults are safe in dev —
+# the connect endpoint returns 503 when unconfigured.
+MICROSOFT_OAUTH_CLIENT_ID = env("MICROSOFT_OAUTH_CLIENT_ID", default="")
+MICROSOFT_OAUTH_CLIENT_SECRET = env("MICROSOFT_OAUTH_CLIENT_SECRET", default="")
+MICROSOFT_OAUTH_REDIRECT_URI = env(
+    "MICROSOFT_OAUTH_REDIRECT_URI",
+    default="http://localhost:8000/api/oauth/microsoft/callback",
+)
+MICROSOFT_OAUTH_FRONTEND_RETURN = "/settings/integrations"
+# offline_access → refresh_token. Calendars.ReadWrite → create events on
+# any calendar the user can edit. profile → given_name/family_name for
+# SSO signup so the new user's name isn't blank.
+MICROSOFT_OAUTH_SCOPES = [
+    "openid",
+    "email",
+    "profile",
+    "offline_access",
+    "Calendars.ReadWrite",
 ]
