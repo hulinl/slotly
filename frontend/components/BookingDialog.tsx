@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, MapPin, Video, X as XIcon } from "lucide-react";
+import { MapPin, Video, X as XIcon } from "lucide-react";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { Button, FormError, Input } from "@/components/ui";
 
@@ -79,12 +79,6 @@ export function BookingDialog({
   // the textarea behind a "+ Add note" toggle removes ~120px of default
   // dialog height (biggest single-source of vertical scroll on laptops).
   const [showNotes, setShowNotes] = useState(false);
-  // Two-step wizard on mobile only (step 1 = when/where, step 2 = who).
-  // On desktop both sections show at once; the step state simply doesn't
-  // apply because the "Continue"/"Back" buttons are `sm:hidden` and the
-  // section wrappers force `sm:block`. Cheaper than JS media-query
-  // detection and avoids an SSR mismatch flash.
-  const [step, setStep] = useState<1 | 2>(1);
   // Honeypot — off-screen text field that legit users never see. Bots
   // that greedily fill every input trip it and get silently 204'd.
   const [hp, setHp] = useState("");
@@ -130,7 +124,6 @@ export function BookingDialog({
     setLocation("");
     setHp("");
     setShowNotes(false);
-    setStep(1);
     const d = ALL_DURATIONS.find((x) => x === defaultDurationMin && x <= intervalLenMin)
       ?? ALL_DURATIONS.filter((x) => x <= intervalLenMin).slice(-1)[0]
       ?? intervalLenMin;
@@ -163,16 +156,12 @@ export function BookingDialog({
     day: "numeric",
     month: "long",
   });
-  // Step 1 is "when + where"; needs a valid slot and (for physical) an address.
-  const canProceed =
+  const canSubmit =
     startMin !== null &&
     startOptions.length > 0 &&
-    (kind !== "physical" || location.trim().length > 0);
-  // Step 2 additionally requires the "who" fields.
-  const canSubmit =
-    canProceed &&
     title.trim().length > 0 &&
     !submitting &&
+    (kind !== "physical" || location.trim().length > 0) &&
     (mode === "authed" || (visitorName.trim().length > 0 && isEmail(visitorEmail)));
 
   function handleSubmit(e: React.FormEvent) {
@@ -196,7 +185,7 @@ export function BookingDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget && !submitting) onClose();
       }}
@@ -206,21 +195,10 @@ export function BookingDialog({
     >
       <form
         onSubmit={handleSubmit}
-        className="flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 sm:max-h-[92vh] sm:max-w-lg sm:rounded-2xl"
+        className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900 sm:max-h-[92vh] sm:max-w-lg"
       >
-        {/* Header — sticky, compact. Mobile step-2 gets a Back arrow that
-            navigates within the wizard (does not close the dialog). */}
+        {/* Header — sticky, compact. */}
         <header className="flex items-center gap-2 border-b border-zinc-100 px-4 py-2.5 dark:border-zinc-800 sm:px-5 sm:py-3">
-          {step === 2 && (
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 sm:hidden"
-              aria-label="Back to when & where"
-            >
-              <ArrowLeft size={18} aria-hidden />
-            </button>
-          )}
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-[15px] font-semibold text-zinc-900 dark:text-zinc-50 sm:text-base">
               {mode === "public"
@@ -231,7 +209,6 @@ export function BookingDialog({
             </h2>
             <p className="truncate text-[11px] text-zinc-500 dark:text-zinc-400 sm:text-xs">
               {dayLabel}
-              <span className="ml-1 sm:hidden">· Step {step} of 2</span>
             </p>
           </div>
           <button
@@ -245,13 +222,11 @@ export function BookingDialog({
           </button>
         </header>
 
-        {/* Body — mobile-first compact layout, split into two logical
-            sections. On mobile only one shows at a time (wizard); on
-            sm+ both render at once because the section wrappers force
-            sm:block. Chips inside scroll horizontally on phones (single
-            row = predictable height). */}
+        {/* Body — everything shown at once. If the total exceeds the
+            dialog's max-h, the body scrolls internally with a thin,
+            theme-aware scrollbar (never the default black bar on dark
+            surfaces). */}
         <div className="flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3 [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.300)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-zinc-300 [&::-webkit-scrollbar-track]:bg-transparent dark:[scrollbar-color:theme(colors.zinc.700)_transparent] dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700 sm:space-y-4 sm:px-5 sm:py-4">
-          <div className={`space-y-3 sm:space-y-4 sm:block ${step === 1 ? "block" : "hidden"}`}>
           {allowPhysical && (
             <fieldset>
               <legend className="sr-only">Meeting type</legend>
@@ -344,11 +319,9 @@ export function BookingDialog({
               )}
             </div>
           </div>
-          </div>
 
-          <div className={`space-y-3 sm:space-y-4 sm:block ${step === 2 ? "block" : "hidden"}`}>
           {mode === "public" && (
-            <div className="grid grid-cols-2 gap-2 sm:gap-3 sm:border-t sm:border-zinc-100 sm:pt-4 dark:sm:border-zinc-800">
+            <div className="grid grid-cols-2 gap-2 border-t border-zinc-100 pt-3 sm:gap-3 sm:pt-4 dark:border-zinc-800">
               <div className="space-y-1">
                 <MicroLabel htmlFor="visitor-name">Your name</MicroLabel>
                 <Input
@@ -427,8 +400,6 @@ export function BookingDialog({
             </button>
           )}
 
-          </div>
-
           {errorMessage && <FormError message={errorMessage} />}
           {successMessage && (
             <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
@@ -437,14 +408,10 @@ export function BookingDialog({
           )}
         </div>
 
-        {/* Sticky footer. On mobile only one action button shows (full
-            width) — Continue on step 1, Book/Send on step 2. Header's Back
-            arrow + Close X cover the secondary actions so the footer stays
-            single-purpose and thumb-friendly. Desktop keeps the Cancel +
-            Book pair. Safe-area padding lifts the button above iOS's home
-            indicator. */}
+        {/* Sticky footer with Cancel + primary action. iOS safe-area
+            padding lifts the buttons above the home indicator. */}
         <footer
-          className="flex items-center gap-2 border-t border-zinc-100 bg-white px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900 sm:justify-end sm:px-5 sm:py-3"
+          className="flex items-center justify-end gap-2 border-t border-zinc-100 bg-white px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900 sm:px-5 sm:py-3"
           style={{ paddingBottom: "max(0.625rem, env(safe-area-inset-bottom))" }}
         >
           <Button
@@ -452,35 +419,15 @@ export function BookingDialog({
             variant="secondary"
             onClick={onClose}
             disabled={submitting}
-            className="hidden w-auto px-4 sm:inline-flex"
+            className="w-auto px-4"
           >
             Cancel
           </Button>
-          {/* Mobile step 1: Continue → step 2. Hidden on desktop (both
-              sections show; Book handles submit directly). */}
-          {step === 1 && (
-            <Button
-              type="button"
-              onClick={() => setStep(2)}
-              disabled={!canProceed}
-              className={
-                "w-full px-5 sm:hidden " +
-                (kind === "physical"
-                  ? "!bg-amber-600 hover:!bg-amber-700 dark:!bg-amber-600 dark:hover:!bg-amber-700"
-                  : "")
-              }
-            >
-              Continue
-            </Button>
-          )}
-          {/* Book — the actual submit. On mobile only shown at step 2;
-              on desktop always shown. */}
           <Button
             type="submit"
             disabled={!canSubmit}
             className={
-              "w-full px-5 sm:inline-flex sm:w-auto " +
-              (step === 1 ? "hidden sm:inline-flex " : "") +
+              "w-auto px-5 " +
               (kind === "physical"
                 ? "!bg-amber-600 hover:!bg-amber-700 dark:!bg-amber-600 dark:hover:!bg-amber-700"
                 : "")
