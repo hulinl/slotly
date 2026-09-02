@@ -237,6 +237,7 @@ function PublicProfilePageInner() {
                 kind: selectedType.kind,
                 location: selectedType.location,
                 description: selectedType.description,
+                questions: selectedType.questions,
               }
             : null
         }
@@ -259,6 +260,7 @@ function PublicProfilePageInner() {
               kind: v.kind,
               location: v.location,
               typeSlug: selectedType?.slug,
+              customAnswers: v.customAnswers,
             });
             if ("pending" in result) {
               setBookingSuccess(

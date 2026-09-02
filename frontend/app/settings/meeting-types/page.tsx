@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, MapPin, Pencil, PlusCircle, Trash2, Video } from "lucide-react";
+import { CheckCircle2, MapPin, Pencil, PlusCircle, Trash2, Video, X as XIcon } from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { SettingsNav } from "@/components/SettingsNav";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
@@ -23,6 +23,7 @@ import {
   listMeetingTypes,
   updateMeetingType,
   type MeetingType,
+  type MeetingTypeQuestion,
 } from "@/lib/meeting-types";
 
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180, 240];
@@ -222,8 +223,27 @@ function EditorModal({
   const [description, setDescription] = useState(initial?.description ?? "");
   const [location, setLocation] = useState(initial?.location ?? "");
   const [color, setColor] = useState(initial?.color ?? PRESET_COLORS[0]);
+  const [questions, setQuestions] = useState<MeetingTypeQuestion[]>(initial?.questions ?? []);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function addQuestion() {
+    setQuestions((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID().replaceAll("-", ""),
+        label: "",
+        kind: "text",
+        required: false,
+      },
+    ]);
+  }
+  function updateQuestion(idx: number, patch: Partial<MeetingTypeQuestion>) {
+    setQuestions((prev) => prev.map((q, i) => (i === idx ? { ...q, ...patch } : q)));
+  }
+  function removeQuestion(idx: number) {
+    setQuestions((prev) => prev.filter((_, i) => i !== idx));
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -237,6 +257,9 @@ function EditorModal({
         description: description.trim(),
         location: kind === "physical" ? location.trim() : "",
         color,
+        questions: questions
+          .map((q) => ({ ...q, label: q.label.trim() }))
+          .filter((q) => q.label.length > 0),
       };
       const saved = isNew
         ? await createMeetingType(payload)
@@ -365,6 +388,90 @@ function EditorModal({
               />
             ))}
           </div>
+        </div>
+
+        {/* Custom questions the visitor must fill in when they pick this
+            type. Optional — skip the section if you don't need it. */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-200">
+              Questions
+            </span>
+            <button
+              type="button"
+              onClick={addQuestion}
+              className="text-xs font-medium text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+            >
+              + Add question
+            </button>
+          </div>
+          {questions.length === 0 ? (
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              No questions. Add one to ask visitors for context before they book
+              (e.g. &quot;What&apos;s your company?&quot;, &quot;What do you want to
+              discuss?&quot;).
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {questions.map((q, idx) => (
+                <li
+                  key={q.id}
+                  className="rounded-md border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-950/40"
+                >
+                  <div className="flex items-start gap-2">
+                    <Input
+                      value={q.label}
+                      onChange={(e) => updateQuestion(idx, { label: e.target.value })}
+                      placeholder="Question text"
+                      className="!h-8 !text-xs"
+                      maxLength={120}
+                    />
+                    <select
+                      value={q.kind}
+                      onChange={(e) =>
+                        updateQuestion(idx, { kind: e.target.value as MeetingTypeQuestion["kind"] })
+                      }
+                      className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-xs dark:border-zinc-800 dark:bg-zinc-950"
+                    >
+                      <option value="text">Text</option>
+                      <option value="textarea">Long text</option>
+                      <option value="select">Select</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => removeQuestion(idx)}
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30"
+                      title="Remove"
+                    >
+                      <XIcon size={14} />
+                    </button>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-3 pl-1">
+                    <label className="flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400">
+                      <input
+                        type="checkbox"
+                        checked={q.required}
+                        onChange={(e) => updateQuestion(idx, { required: e.target.checked })}
+                      />
+                      Required
+                    </label>
+                    {q.kind === "select" && (
+                      <Input
+                        value={(q.options ?? []).join(", ")}
+                        onChange={(e) =>
+                          updateQuestion(idx, {
+                            options: e.target.value.split(",").map((o) => o.trim()).filter(Boolean),
+                          })
+                        }
+                        placeholder="Options separated by commas"
+                        className="!h-7 !text-[11px]"
+                      />
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {error && <FormError message={error} />}

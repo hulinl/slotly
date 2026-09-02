@@ -3,6 +3,14 @@
  * on /api/public/profile/<token> (visitor-facing read).
  */
 
+export type MeetingTypeQuestion = {
+  id: string;
+  label: string;
+  kind: "text" | "textarea" | "select";
+  required: boolean;
+  options?: string[];
+};
+
 export type MeetingType = {
   id: number;
   name: string;
@@ -14,6 +22,7 @@ export type MeetingType = {
   color: string;
   is_active: boolean;
   display_order: number;
+  questions: MeetingTypeQuestion[];
 };
 
 /** Trimmed shape the public profile endpoint returns — no id/is_active
@@ -26,6 +35,7 @@ export type PublicMeetingType = {
   kind: "online" | "physical";
   location: string;
   color: string;
+  questions: MeetingTypeQuestion[];
 };
 
 function csrfHeader(): Record<string, string> {
@@ -50,6 +60,7 @@ export type MeetingTypeInput = {
   color?: string;
   is_active?: boolean;
   display_order?: number;
+  questions?: MeetingTypeQuestion[];
 };
 
 export async function createMeetingType(input: MeetingTypeInput): Promise<MeetingType> {

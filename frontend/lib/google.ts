@@ -182,6 +182,8 @@ export async function createPublicMeeting(input: {
   /** When set, backend looks up the MeetingType and locks kind + duration
    * to its values. Visitor's `kind`/`end` are ignored to prevent stretching. */
   typeSlug?: string;
+  /** Answers to the type's custom questions, keyed by question id. */
+  customAnswers?: Record<string, string>;
   /** Honeypot field. Leave empty; if a script populates every text field
    * it fills this too and the backend silently drops the request. */
   hp?: string;
@@ -199,6 +201,7 @@ export async function createPublicMeeting(input: {
       kind: input.kind ?? "online",
       location: input.location ?? "",
       type_slug: input.typeSlug,
+      custom_answers: input.customAnswers ?? {},
       hp: input.hp ?? "",
     }),
   });

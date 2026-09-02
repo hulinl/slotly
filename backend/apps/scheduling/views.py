@@ -753,6 +753,7 @@ class PublicMeetingCreateView(APIView):
         # server-authoritative version so a manipulated client can't
         # sneak in a longer slot or the wrong kind.
         meeting_type: MeetingType | None = None
+        custom_answers: dict = {}
         type_slug = body.get("type_slug")
         if type_slug:
             meeting_type = MeetingType.objects.filter(
@@ -762,6 +763,28 @@ class PublicMeetingCreateView(APIView):
                 return Response({"type_slug": "Unknown or inactive meeting type."}, status=400)
             kind = meeting_type.kind
             location = _clean_text(body.get("location"), fallback=meeting_type.location, maxlen=300)
+
+            # Validate custom answers against the type's question schema.
+            raw_answers = body.get("custom_answers") or {}
+            if not isinstance(raw_answers, dict):
+                return Response({"custom_answers": "Must be an object."}, status=400)
+            for q in meeting_type.questions or []:
+                qid = q.get("id")
+                if not qid:
+                    continue
+                ans = str(raw_answers.get(qid) or "").strip()
+                if q.get("required") and not ans:
+                    return Response(
+                        {"custom_answers": f"'{q.get('label', 'field')}' is required."},
+                        status=400,
+                    )
+                if ans:
+                    if q.get("kind") == "select" and ans not in (q.get("options") or []):
+                        return Response(
+                            {"custom_answers": f"'{q.get('label', 'field')}': invalid option."},
+                            status=400,
+                        )
+                    custom_answers[qid] = ans[:2000]
         else:
             # `kind` splits the flow. Default "online" preserves the old
             # behavior. "physical" opens a BookingRequest for the host to
@@ -841,6 +864,12 @@ class PublicMeetingCreateView(APIView):
         base_description = f"Booked via your Slotly public link by {visitor_name} <{visitor_email}>."
         if meeting_type is not None and meeting_type.description:
             base_description += f"\n\n{meeting_type.description}"
+        if custom_answers and meeting_type is not None:
+            # Include Q&A in the calendar event body so the host sees the
+            # answers alongside the meeting details.
+            answered_block = _render_answers_block(meeting_type.questions or [], custom_answers)
+            if answered_block:
+                base_description += f"\n\n{answered_block}"
         if notes_from_visitor:
             base_description += f"\n\nNote:\n{notes_from_visitor}"
 
@@ -854,9 +883,11 @@ class PublicMeetingCreateView(APIView):
             visitor_name=visitor_name,
             visitor_email=visitor_email,
             attendee_emails=[visitor_email],
-            kind=Booking.Kind.ONLINE,
+            kind=Booking.Kind.ONLINE if (meeting_type is None or meeting_type.kind == MeetingType.Kind.ONLINE) else Booking.Kind.PHYSICAL,
             title=title,
+            location=location if kind == "physical" else "",
             notes=notes_from_visitor,
+            custom_answers=custom_answers,
             start_at=start_dt,
             end_at=end_dt,
         )
@@ -1262,6 +1293,7 @@ def _serialize_meeting_type(t: MeetingType) -> dict:
         "color": t.color,
         "is_active": t.is_active,
         "display_order": t.display_order,
+        "questions": list(t.questions or []),
     }
 
 
@@ -1354,6 +1386,41 @@ def _validate_meeting_type_payload(
             cleaned["display_order"] = max(0, int(_get("display_order")))
         except (TypeError, ValueError):
             return {}, {"display_order": "Must be an integer."}
+
+    if "questions" in body:
+        raw_questions = _get("questions") or []
+        if not isinstance(raw_questions, list):
+            return {}, {"questions": "Must be a list."}
+        cleaned_qs: list[dict] = []
+        seen_ids: set = set()
+        for i, q in enumerate(raw_questions):
+            if not isinstance(q, dict):
+                return {}, {"questions": f"Item #{i} must be an object."}
+            label = str(q.get("label") or "").strip()[:120]
+            if not label:
+                return {}, {"questions": f"Item #{i}: label is required."}
+            kind = str(q.get("kind") or "text").lower()
+            if kind not in ("text", "textarea", "select"):
+                return {}, {"questions": f"Item #{i}: kind must be text/textarea/select."}
+            required = bool(q.get("required", False))
+            qid = str(q.get("id") or "").strip()
+            if not qid:
+                import uuid as _uuid
+                qid = _uuid.uuid4().hex
+            if qid in seen_ids:
+                return {}, {"questions": f"Item #{i}: duplicate id."}
+            seen_ids.add(qid)
+            item: dict = {"id": qid, "label": label, "kind": kind, "required": required}
+            if kind == "select":
+                opts_raw = q.get("options") or []
+                if not isinstance(opts_raw, list) or not opts_raw:
+                    return {}, {"questions": f"Item #{i}: select needs at least one option."}
+                opts = [str(o).strip() for o in opts_raw if str(o).strip()][:20]
+                if not opts:
+                    return {}, {"questions": f"Item #{i}: select options can't all be blank."}
+                item["options"] = opts
+            cleaned_qs.append(item)
+        cleaned["questions"] = cleaned_qs
 
     # Uniqueness: slug per host.
     if "slug" in cleaned:
@@ -1504,6 +1571,7 @@ def _serialize_host_booking(b: Booking) -> dict:
         "visitor_name": b.visitor_name,
         "visitor_email": b.visitor_email,
         "attendee_emails": list(b.attendee_emails or []),
+        "custom_answers": dict(b.custom_answers or {}),
         "cancelled_at": b.cancelled_at.isoformat() if b.cancelled_at else None,
         "cancelled_by_visitor": b.cancelled_by_visitor,
         "created_at": b.created_at.isoformat(),
@@ -1865,6 +1933,21 @@ def _clean_text(value, *, fallback: str, maxlen: int) -> str:
 def _default_title(peer) -> str:
     name = f"{peer.first_name} {peer.last_name}".strip() or peer.email
     return f"Meeting with {name}"
+
+
+def _render_answers_block(questions: list, answers: dict) -> str:
+    """Format custom Q&A as a plain-text block for calendar descriptions.
+    Skips questions the visitor left blank (unanswered optionals)."""
+    lines: list[str] = []
+    for q in questions:
+        qid = q.get("id")
+        ans = answers.get(qid) if qid else None
+        if not ans:
+            continue
+        lines.append(f"{q.get('label', 'Q')}: {ans}")
+    if not lines:
+        return ""
+    return "Additional info:\n" + "\n".join(lines)
 
 
 def _extract_meet_link(event: dict) -> str:

@@ -85,6 +85,13 @@ class MeetingType(models.Model):
     is_active = models.BooleanField(default=True)
     display_order = models.PositiveSmallIntegerField(default=0)
 
+    # Ordered list of {id, label, kind, required, options?} — questions
+    # the visitor must answer before they can pick a slot with this type.
+    # kind is one of "text" | "textarea" | "select"; select uses options.
+    # id is a stable UUID string so Booking.custom_answers can key by it
+    # and survive question renames or reorders.
+    questions = models.JSONField(default=list, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -162,6 +169,11 @@ class Booking(models.Model):
     # been mailed their T-24h reminder. Null means "not sent yet"; the
     # command's window logic skips already-reminded rows.
     reminded_at = models.DateTimeField(null=True, blank=True)
+
+    # Answers the visitor gave to the MeetingType's custom questions,
+    # keyed by question id → answer string. Empty for bookings without
+    # a meeting type or without questions on the picked type.
+    custom_answers = models.JSONField(default=dict, blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 

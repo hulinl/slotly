@@ -906,6 +906,123 @@ class MeetingTypeTests(TestCase):
         self.assertTrue(MeetingType.objects.filter(pk=t.pk).exists())
 
 
+class MeetingTypeQuestionsTests(TestCase):
+    """MeetingType.questions validation + public POST honors + validates
+    custom_answers against the type's question schema."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.host = UserModel.objects.create_user(email="host@test.local", password="pwpw12345xyz")
+        self.host.share_enabled = True
+        self.host.save(update_fields=["share_enabled"])
+        _connect_google(self.host)
+        self.client = APIClient()
+
+    def test_can_create_type_with_questions(self):
+        self.client.force_authenticate(self.host)
+        resp = self.client.post(
+            reverse("meeting-types-list"),
+            {
+                "name": "Discovery",
+                "duration_min": 30,
+                "questions": [
+                    {"label": "Company name", "kind": "text", "required": True},
+                    {"label": "Team size", "kind": "select", "required": False, "options": ["1-10", "11-50", "50+"]},
+                ],
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertEqual(len(body["questions"]), 2)
+        # ids auto-generated
+        self.assertTrue(all("id" in q for q in body["questions"]))
+
+    def test_missing_required_answer_returns_400(self):
+        self.client.force_authenticate(self.host)
+        mt = MeetingType.objects.create(
+            host=self.host, name="Discovery", slug="discovery", duration_min=30,
+            questions=[{"id": "q1", "label": "Company", "kind": "text", "required": True}],
+        )
+        self.client.force_authenticate(None)
+        start = (djtz.now() + timedelta(hours=24)).isoformat()
+        end = (djtz.now() + timedelta(hours=24, minutes=30)).isoformat()
+        resp = self.client.post(
+            reverse("public-meetings-create", args=[str(self.host.share_token)]),
+            {
+                "visitor_name": "V",
+                "visitor_email": "v@example.com",
+                "start": start,
+                "end": end,
+                "type_slug": mt.slug,
+                "custom_answers": {},  # missing required q1
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("custom_answers", resp.json())
+
+    def test_valid_answers_land_in_booking_and_description(self):
+        self.client.force_authenticate(self.host)
+        mt = MeetingType.objects.create(
+            host=self.host, name="Discovery", slug="discovery", duration_min=30,
+            questions=[
+                {"id": "q1", "label": "Company", "kind": "text", "required": True},
+                {"id": "q2", "label": "Notes", "kind": "textarea", "required": False},
+            ],
+        )
+        self.client.force_authenticate(None)
+        start = (djtz.now() + timedelta(hours=24)).isoformat()
+        end = (djtz.now() + timedelta(hours=24, minutes=30)).isoformat()
+        with patch("apps.scheduling.views.create_calendar_event") as mc:
+            mc.return_value = {"id": "e1"}
+            resp = self.client.post(
+                reverse("public-meetings-create", args=[str(self.host.share_token)]),
+                {
+                    "visitor_name": "V",
+                    "visitor_email": "v@example.com",
+                    "start": start,
+                    "end": end,
+                    "type_slug": mt.slug,
+                    "custom_answers": {"q1": "Acme", "q2": "Looking forward"},
+                },
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        booking = Booking.objects.get(host=self.host)
+        self.assertEqual(booking.custom_answers, {"q1": "Acme", "q2": "Looking forward"})
+        _, kwargs = mc.call_args
+        # Answers baked into event description under an "Additional info:" block.
+        self.assertIn("Acme", kwargs["description"])
+        self.assertIn("Company: Acme", kwargs["description"])
+
+    def test_invalid_select_option_rejected(self):
+        self.client.force_authenticate(self.host)
+        mt = MeetingType.objects.create(
+            host=self.host, name="Discovery", slug="discovery", duration_min=30,
+            questions=[{
+                "id": "q1", "label": "Size", "kind": "select", "required": True,
+                "options": ["1-10", "11-50"],
+            }],
+        )
+        self.client.force_authenticate(None)
+        start = (djtz.now() + timedelta(hours=24)).isoformat()
+        end = (djtz.now() + timedelta(hours=24, minutes=30)).isoformat()
+        resp = self.client.post(
+            reverse("public-meetings-create", args=[str(self.host.share_token)]),
+            {
+                "visitor_name": "V",
+                "visitor_email": "v@example.com",
+                "start": start,
+                "end": end,
+                "type_slug": mt.slug,
+                "custom_answers": {"q1": "999+"},  # not in options
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+
 class PublicMeetingWithTypeTests(TestCase):
     """POST /api/public/meetings/<token> honors type_slug — duration + kind
     baked into the type overrule anything the visitor's client sends."""

@@ -431,7 +431,10 @@ class PublicProfileView(APIView):
         types = list(
             _MT.objects.filter(host=user, is_active=True)
             .order_by("display_order", "id")
-            .values("slug", "name", "description", "duration_min", "kind", "location", "color")
+            .values(
+                "slug", "name", "description", "duration_min",
+                "kind", "location", "color", "questions",
+            )
         )
         return Response({
             "profile": profile,

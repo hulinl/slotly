@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MapPin, Video, X as XIcon } from "lucide-react";
 import { AddressAutocomplete } from "@/components/AddressAutocomplete";
 import { Button, FormError, Input } from "@/components/ui";
+import type { MeetingTypeQuestion } from "@/lib/meeting-types";
 
 export type BookingKind = "online" | "physical";
 
@@ -30,6 +31,9 @@ export type BookingSubmit = {
   location?: string;
   visitorName?: string;
   visitorEmail?: string;
+  /** Answers to a MeetingType's custom questions, keyed by question id.
+   * Empty for the generic (no-type) flow. */
+  customAnswers?: Record<string, string>;
 };
 
 const ALL_DURATIONS = [15, 30, 45, 60, 90, 120];
@@ -42,6 +46,7 @@ export type LockedMeetingType = {
   kind: "online" | "physical";
   location?: string;
   description?: string;
+  questions?: MeetingTypeQuestion[];
 };
 
 export function BookingDialog({
@@ -95,6 +100,9 @@ export function BookingDialog({
   // the textarea behind a "+ Add note" toggle removes ~120px of default
   // dialog height (biggest single-source of vertical scroll on laptops).
   const [showNotes, setShowNotes] = useState(false);
+  // Answers to MeetingType.questions, keyed by question id. Populated only
+  // when lockedType has questions; ignored on generic bookings.
+  const [answers, setAnswers] = useState<Record<string, string>>({});
   // Honeypot — off-screen text field that legit users never see. Bots
   // that greedily fill every input trip it and get silently 204'd.
   const [hp, setHp] = useState("");
@@ -146,6 +154,7 @@ export function BookingDialog({
     setLocation(lockedType?.location ?? "");
     setHp("");
     setShowNotes(false);
+    setAnswers({});
     const initialDuration = lockedType
       ? lockedType.duration_min
       : (ALL_DURATIONS.find((x) => x === defaultDurationMin && x <= intervalLenMin)
@@ -180,13 +189,19 @@ export function BookingDialog({
     day: "numeric",
     month: "long",
   });
+  const requiredQuestionsAnswered = useMemo(() => {
+    const qs = lockedType?.questions ?? [];
+    return qs.every((q) => !q.required || (answers[q.id] ?? "").trim().length > 0);
+  }, [lockedType, answers]);
+
   const canSubmit =
     startMin !== null &&
     startOptions.length > 0 &&
     title.trim().length > 0 &&
     !submitting &&
     (kind !== "physical" || location.trim().length > 0) &&
-    (mode === "authed" || (visitorName.trim().length > 0 && isEmail(visitorEmail)));
+    (mode === "authed" || (visitorName.trim().length > 0 && isEmail(visitorEmail))) &&
+    requiredQuestionsAnswered;
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -204,6 +219,14 @@ export function BookingDialog({
       location: kind === "physical" ? location.trim() : undefined,
       visitorName: visitorName.trim() || undefined,
       visitorEmail: visitorEmail.trim() || undefined,
+      customAnswers:
+        lockedType?.questions?.length
+          ? Object.fromEntries(
+              lockedType.questions
+                .map((q) => [q.id, (answers[q.id] ?? "").trim()])
+                .filter(([, v]) => v.length > 0),
+            )
+          : undefined,
     });
   }
 
@@ -410,6 +433,15 @@ export function BookingDialog({
             </div>
           )}
 
+          {lockedType?.questions?.map((q) => (
+            <QuestionField
+              key={q.id}
+              question={q}
+              value={answers[q.id] ?? ""}
+              onChange={(v) => setAnswers((prev) => ({ ...prev, [q.id]: v }))}
+            />
+          ))}
+
           <div className="space-y-1">
             <MicroLabel htmlFor="title">Title</MicroLabel>
             <Input
@@ -544,6 +576,60 @@ function KindTile({
         {sub}
       </div>
     </button>
+  );
+}
+
+function QuestionField({
+  question,
+  value,
+  onChange,
+}: {
+  question: MeetingTypeQuestion;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const inputId = `q-${question.id}`;
+  return (
+    <div className="space-y-1">
+      <MicroLabel htmlFor={inputId}>
+        {question.label}
+        {question.required && <span className="ml-1 text-red-500">*</span>}
+      </MicroLabel>
+      {question.kind === "textarea" ? (
+        <textarea
+          id={inputId}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          rows={2}
+          maxLength={2000}
+          required={question.required}
+          className="w-full resize-y rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+        />
+      ) : question.kind === "select" ? (
+        <select
+          id={inputId}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          required={question.required}
+          className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
+        >
+          <option value="">— pick one —</option>
+          {(question.options ?? []).map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <Input
+          id={inputId}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          maxLength={2000}
+          required={question.required}
+        />
+      )}
+    </div>
   );
 }
 
