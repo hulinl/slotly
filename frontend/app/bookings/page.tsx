@@ -496,16 +496,25 @@ function BookingCard({
       }
     >
       <header className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
-              {booking.visitor_name || booking.visitor_email}
+              {booking.title || booking.visitor_name || booking.visitor_email}
             </h3>
             <BookingStatusPill status={booking.status} past={isPast} />
+            {booking.attendee_emails.length > 1 && (
+              <span className="inline-flex items-center rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200">
+                Group · {booking.attendee_emails.length}
+              </span>
+            )}
           </div>
-          <p className="text-xs text-zinc-500 dark:text-zinc-400">{booking.visitor_email}</p>
+          <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+            {booking.attendee_emails.length > 1
+              ? booking.attendee_emails.join(", ")
+              : booking.visitor_email}
+          </p>
         </div>
-        <span className="inline-flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+        <span className="inline-flex shrink-0 items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
           {booking.kind === "physical" ? (
             <MapPin size={14} aria-hidden />
           ) : (

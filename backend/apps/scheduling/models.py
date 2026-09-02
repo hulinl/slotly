@@ -140,6 +140,10 @@ class Booking(models.Model):
 
     visitor_name = models.CharField(max_length=120, blank=True)
     visitor_email = models.EmailField(blank=True)
+    # For group bookings from /search or /people, every invitee's email
+    # goes here. Public single-visitor bookings put a one-element list
+    # here too so downstream code can read one field.
+    attendee_emails = models.JSONField(default=list, blank=True)
 
     kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.ONLINE)
     title = models.CharField(max_length=200, blank=True)

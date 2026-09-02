@@ -781,6 +781,31 @@ class MeetingCreateGroupTests(TestCase):
         # Host is the calendar owner — inviting themselves is nonsense.
         self.assertEqual(kwargs["attendees"], [self.a.email])
 
+    def test_group_booking_writes_booking_row_with_attendees(self):
+        start = (djtz.now() + timedelta(hours=24)).isoformat()
+        end = (djtz.now() + timedelta(hours=24, minutes=30)).isoformat()
+        with patch("apps.scheduling.views.create_calendar_event") as mc:
+            mc.return_value = {"id": "evt-grp"}
+            resp = self.client.post(
+                reverse("meetings-create"),
+                {
+                    "attendee_user_ids": [self.a.pk, self.b.pk],
+                    "start": start,
+                    "end": end,
+                },
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        # Manage URL exposed so host can share/track later.
+        self.assertIn("manage_url", body)
+        # Booking row persisted with the full attendee list.
+        bookings = Booking.objects.filter(host=self.host)
+        self.assertEqual(bookings.count(), 1)
+        b = bookings.first()
+        self.assertEqual(sorted(b.attendee_emails), sorted([self.a.email, self.b.email]))
+        self.assertEqual(b.event_id, "evt-grp")
+
     def test_empty_attendees_returns_400(self):
         start = (djtz.now() + timedelta(hours=24)).isoformat()
         end = (djtz.now() + timedelta(hours=24, minutes=30)).isoformat()

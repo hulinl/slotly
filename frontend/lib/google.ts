@@ -267,6 +267,9 @@ export type HostBooking = {
   location: string;
   visitor_name: string;
   visitor_email: string;
+  /** Full attendee list. One element for public single-visitor bookings;
+   * many for group meetings from /people or /search. */
+  attendee_emails: string[];
   cancelled_at: string | null;
   cancelled_by_visitor: boolean;
   created_at: string;

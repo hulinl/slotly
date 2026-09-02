@@ -642,12 +642,31 @@ class MeetingCreateView(APIView):
         title = _clean_text(body.get("title"), fallback=default_title, maxlen=200)
         notes = _clean_text(body.get("notes"), fallback="", maxlen=2000)
 
+        # Create the Booking row up front — same pattern as public flow —
+        # so the manage-URL footer we put in the event description points
+        # at a real row, and so this booking shows up on the host's
+        # /bookings Confirmed tab alongside public bookings.
+        booking = Booking(
+            host=request.user,
+            provider=provider.name,
+            calendar_id=provider.write_calendar_id,
+            visitor_name=(attendees[0].first_name or "").strip(),
+            visitor_email=attendees[0].email,
+            attendee_emails=[u.email for u in attendees],
+            kind=Booking.Kind.ONLINE,
+            title=title,
+            notes=notes,
+            start_at=start_dt,
+            end_at=end_dt,
+        )
+        description = _description_with_manage_link(notes, booking)
+
         try:
             event = provider.create_event(
                 request.user,
                 calendar_id=provider.write_calendar_id,
                 summary=title,
-                description=notes,
+                description=description,
                 start_iso=start_dt.isoformat(),
                 end_iso=end_dt.isoformat(),
                 time_zone=_settings.TIME_ZONE,
@@ -657,6 +676,9 @@ class MeetingCreateView(APIView):
             return Response({"detail": f"Reconnect calendar: {exc}"}, status=401)
         except (GoogleApiError, _graph.MicrosoftApiError) as exc:
             return Response({"detail": f"Calendar refused: {exc}"}, status=502)
+
+        booking.event_id = event.get("id", "") or ""
+        booking.save()
 
         return Response({
             "ok": True,
@@ -670,6 +692,7 @@ class MeetingCreateView(APIView):
                 "end": end_dt.isoformat(),
                 "provider": provider.name,
             },
+            "manage_url": _manage_url(booking),
         }, status=201)
 
 
@@ -830,6 +853,7 @@ class PublicMeetingCreateView(APIView):
             calendar_id=provider.write_calendar_id,
             visitor_name=visitor_name,
             visitor_email=visitor_email,
+            attendee_emails=[visitor_email],
             kind=Booking.Kind.ONLINE,
             title=title,
             notes=notes_from_visitor,
@@ -1478,6 +1502,7 @@ def _serialize_host_booking(b: Booking) -> dict:
         "location": b.location,
         "visitor_name": b.visitor_name,
         "visitor_email": b.visitor_email,
+        "attendee_emails": list(b.attendee_emails or []),
         "cancelled_at": b.cancelled_at.isoformat() if b.cancelled_at else None,
         "cancelled_by_visitor": b.cancelled_by_visitor,
         "created_at": b.created_at.isoformat(),
@@ -1555,6 +1580,7 @@ class BookingRequestDecideView(APIView):
                 calendar_id=provider.write_calendar_id,
                 visitor_name=req.visitor_name,
                 visitor_email=req.visitor_email,
+                attendee_emails=[req.visitor_email],
                 kind=Booking.Kind.PHYSICAL,
                 title=req.title or f"Meeting with {req.visitor_name}",
                 location=req.location,
