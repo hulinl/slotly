@@ -460,31 +460,120 @@ function GuestLanding() {
       <header className="px-6 py-5">
         <Logo size={26} />
       </header>
-      <main className="flex flex-1 items-center justify-center px-6 pb-16">
-        <div className="w-full max-w-md space-y-6 text-center">
-          <div className="mx-auto inline-block">
-            <LogoMark size={56} />
+      <main className="flex flex-1 items-center justify-center px-6 pb-10">
+        <div className="w-full max-w-xl space-y-10 text-center">
+          {/* Hero */}
+          <div className="space-y-6">
+            <div className="mx-auto inline-block">
+              <LogoMark size={56} />
+            </div>
+            <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-4xl">
+              Find time to meet — without the calendar Tetris
+            </h1>
+            <p className="text-lg text-zinc-600 dark:text-zinc-400">
+              Slotly connects to your Google Calendar, finds when you and
+              your team are all free, and books the meeting — with a Google
+              Meet link, invites sent, one click.
+            </p>
+            <div className="mx-auto flex max-w-xs flex-col gap-2">
+              <Link href="/auth/register" className="block">
+                <Button className="inline-flex items-center justify-center gap-2">
+                  Create your free account
+                  <ArrowRight size={14} />
+                </Button>
+              </Link>
+              <Link href="/auth/login" className="block">
+                <Button variant="secondary">Sign in</Button>
+              </Link>
+            </div>
           </div>
-          <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Find time to meet — without the calendar Tetris
-          </h1>
-          <p className="text-zinc-600 dark:text-zinc-400">
-            Subscribe to your group&apos;s calendars, pick the people you need, and Slotly shows
-            every shared free slot in the next 3 months.
-          </p>
-          <div className="mx-auto flex max-w-xs flex-col gap-2">
-            <Link href="/auth/register" className="block">
-              <Button className="inline-flex items-center justify-center gap-2">
-                Create your free account
-                <ArrowRight size={14} />
-              </Button>
-            </Link>
-            <Link href="/auth/login" className="block">
-              <Button variant="secondary">Sign in</Button>
-            </Link>
-          </div>
+
+          {/* Feature bullets — written so a Google OAuth reviewer can
+              match every listed capability back to a requested scope. */}
+          <section className="grid gap-4 text-left sm:grid-cols-2">
+            <FeatureCard
+              icon={CalendarDays}
+              title="Reads your free/busy"
+              body="Slotly reads only when you're busy — never event titles, attendees, or descriptions."
+            />
+            <FeatureCard
+              icon={Calendar}
+              title="Books meetings for you"
+              body="One click creates the event on your calendar with everyone invited and a Meet link attached."
+            />
+            <FeatureCard
+              icon={Sparkles}
+              title="Public booking link"
+              body="Share a URL so clients or colleagues book you directly — no email ping-pong."
+            />
+            <FeatureCard
+              icon={CheckCircle2}
+              title="Privacy first"
+              body="Tokens encrypted at rest, no data sold, no ads, delete your account anytime."
+            />
+          </section>
+
+          {/* Explicit Google API disclosure — helps reviewers tick their
+              Limited Use checklist without hunting through the app. */}
+          <section className="rounded-xl border border-zinc-200 bg-white p-6 text-left text-sm text-zinc-600 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+            <h2 className="mb-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+              How Slotly uses Google user data
+            </h2>
+            <ul className="ml-5 list-disc space-y-1">
+              <li>
+                <strong>Calendar free/busy</strong> — to compute when you and
+                the people you&apos;re trying to meet are all available.
+              </li>
+              <li>
+                <strong>Create calendar events</strong> — only when you or a
+                visitor of your public link explicitly books a meeting.
+              </li>
+              <li>
+                <strong>Your name and email</strong> (from Google userinfo) —
+                to identify your Slotly account and to render your public
+                profile.
+              </li>
+            </ul>
+            <p className="mt-3 text-xs text-zinc-500 dark:text-zinc-500">
+              Slotly&apos;s use of information received from Google APIs adheres
+              to the{" "}
+              <a
+                href="https://developers.google.com/terms/api-services-user-data-policy"
+                target="_blank"
+                rel="noreferrer"
+                className="underline"
+              >
+                Google API Services User Data Policy
+              </a>
+              , including the Limited Use requirements. Full detail in our{" "}
+              <Link href="/privacy" className="underline">
+                privacy policy
+              </Link>
+              .
+            </p>
+          </section>
         </div>
       </main>
+    </div>
+  );
+}
+
+function FeatureCard({
+  icon: Icon,
+  title,
+  body,
+}: {
+  icon: LucideIcon;
+  title: string;
+  body: string;
+}) {
+  return (
+    <div className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="mb-2 inline-flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+        <Icon size={16} aria-hidden />
+      </div>
+      <h3 className="mb-1 text-sm font-semibold text-zinc-900 dark:text-zinc-50">{title}</h3>
+      <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">{body}</p>
     </div>
   );
 }
