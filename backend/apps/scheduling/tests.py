@@ -792,6 +792,93 @@ class MeetingCreateGroupTests(TestCase):
         self.assertEqual(resp.status_code, 400)
 
 
+class PublicBookingRescheduleTests(TestCase):
+    """POST /api/public/bookings/<uuid>/reschedule — visitor moves the
+    slot without cancelling; backend deletes old + inserts new + updates
+    the row in-place. Booking uuid stays so the manage URL keeps working."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.host = UserModel.objects.create_user(
+            email="host@test.local", password="pwpw12345xyz",
+            first_name="Han", last_name="Solo",
+        )
+        _connect_google(self.host)
+        self.client = APIClient()
+        self.booking = Booking.objects.create(
+            host=self.host,
+            provider=Booking.Provider.GOOGLE,
+            calendar_id="primary",
+            event_id="evt-old",
+            visitor_name="Rey",
+            visitor_email="rey@example.com",
+            kind=Booking.Kind.ONLINE,
+            title="Training",
+            start_at=djtz.now() + timedelta(hours=48),
+            end_at=djtz.now() + timedelta(hours=48, minutes=30),
+        )
+
+    def _new_slot(self, hours=72):
+        s = djtz.now() + timedelta(hours=hours)
+        return s.isoformat(), (s + timedelta(minutes=30)).isoformat()
+
+    def test_reschedule_deletes_old_and_creates_new_event(self):
+        new_start, new_end = self._new_slot()
+        with patch("apps.scheduling.views.delete_calendar_event") as md, \
+             patch("apps.scheduling.views.create_calendar_event") as mc:
+            mc.return_value = {"id": "evt-new"}
+            resp = self.client.post(
+                reverse("public-booking-reschedule", args=[str(self.booking.uuid)]),
+                {"start": new_start, "end": new_end},
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        md.assert_called_once()
+        mc.assert_called_once()
+        self.booking.refresh_from_db()
+        # Row moved to the new time and picked up the new event id.
+        self.assertEqual(self.booking.event_id, "evt-new")
+        self.assertEqual(self.booking.start_at.isoformat(), new_start)
+        # Reminded flag reset so future runs pick this up for the new time.
+        self.assertIsNone(self.booking.reminded_at)
+
+    def test_same_slot_is_noop(self):
+        with patch("apps.scheduling.views.delete_calendar_event") as md, \
+             patch("apps.scheduling.views.create_calendar_event") as mc:
+            resp = self.client.post(
+                reverse("public-booking-reschedule", args=[str(self.booking.uuid)]),
+                {
+                    "start": self.booking.start_at.isoformat(),
+                    "end": self.booking.end_at.isoformat(),
+                },
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 200)
+        md.assert_not_called()
+        mc.assert_not_called()
+
+    def test_cannot_reschedule_cancelled_booking(self):
+        self.booking.status = Booking.Status.CANCELLED
+        self.booking.save(update_fields=["status"])
+        new_start, new_end = self._new_slot()
+        resp = self.client.post(
+            reverse("public-booking-reschedule", args=[str(self.booking.uuid)]),
+            {"start": new_start, "end": new_end},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 409)
+
+    def test_cannot_reschedule_to_the_past(self):
+        past_start = (djtz.now() - timedelta(hours=2)).isoformat()
+        past_end = (djtz.now() - timedelta(hours=1)).isoformat()
+        resp = self.client.post(
+            reverse("public-booking-reschedule", args=[str(self.booking.uuid)]),
+            {"start": past_start, "end": past_end},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+
 class HostCancelTests(TestCase):
     """Host-side cancel from /bookings Confirmed tab."""
 

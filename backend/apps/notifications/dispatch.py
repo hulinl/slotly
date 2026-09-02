@@ -135,6 +135,13 @@ _EMAIL_RENDERERS: dict[str, EmailRenderer] = {
             + (f"\n\nReason:\n{p['reason']}" if p.get("reason") else "")
         ),
     ),
+    Notification.Type.BOOKING_RESCHEDULED_BY_VISITOR: lambda p, user: (
+        f"{p.get('visitor_name', 'A visitor')} rescheduled a booking",
+        (
+            f"{p.get('visitor_name', 'A visitor')} ({p.get('visitor_email', '')}) "
+            f"moved their meeting from {p.get('from_when', '')} to {p.get('to_when', '')}."
+        ),
+    ),
 }
 
 
@@ -175,6 +182,24 @@ _HTML_RENDERERS: dict[str, Callable[[dict, object], str]] = {
             + (blockquote(p["reason"]) if p.get("reason") else "")
             + paragraph(
                 "The calendar event has been removed and the slot is free again.",
+                muted=True,
+            )
+        ),
+    ),
+    Notification.Type.BOOKING_RESCHEDULED_BY_VISITOR: lambda p, user: html_shell(
+        title=f"{p.get('visitor_name', 'A visitor')} rescheduled a booking",
+        intro_html=(
+            paragraph(
+                f"{p.get('visitor_name', 'A visitor')} ({p.get('visitor_email', '')}) "
+                "moved their meeting with you to a new time."
+            )
+            + kv_rows([
+                ("Was", p.get("from_when", "")),
+                ("Now", p.get("to_when", "")),
+            ])
+            + paragraph(
+                "The calendar event has been updated — Google/Microsoft has "
+                "already emailed everyone the new invite.",
                 muted=True,
             )
         ),

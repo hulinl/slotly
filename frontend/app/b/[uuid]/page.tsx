@@ -14,15 +14,18 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import { CalendarClock, CheckCircle2, MapPin, Video } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, CalendarClock, CheckCircle2, MapPin, Video } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { SlotsCalendar } from "@/components/SlotsCalendar";
 import { Button, FormError, Label } from "@/components/ui";
 import {
   cancelManagedBooking,
   getManagedBooking,
+  rescheduleManagedBooking,
   type ManagedBooking,
 } from "@/lib/google";
+import { computeFreeSlots, workingHoursRangeFromHours } from "@/lib/public-profile";
 
 export default function ManageBookingPage() {
   const params = useParams<{ uuid: string }>();
@@ -36,6 +39,9 @@ export default function ManageBookingPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<"detail" | "reschedule">("detail");
+  const [reschedulePick, setReschedulePick] = useState<{ start: Date; end: Date } | null>(null);
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -72,6 +78,25 @@ export default function ManageBookingPage() {
     }
   }
 
+  async function onReschedule() {
+    if (!reschedulePick) return;
+    setSubmitting(true);
+    setRescheduleError(null);
+    try {
+      const updated = await rescheduleManagedBooking(uuid, {
+        start: toLocalIso(reschedulePick.start),
+        end: toLocalIso(reschedulePick.end),
+      });
+      setBooking(updated);
+      setReschedulePick(null);
+      setView("detail");
+    } catch (err) {
+      setRescheduleError(err instanceof Error ? err.message : "Couldn't reschedule");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <div className="border-b border-zinc-200 bg-white px-6 py-3 dark:border-zinc-800 dark:bg-zinc-900">
@@ -103,7 +128,7 @@ export default function ManageBookingPage() {
           <FormError message="Couldn't load this booking. Try again in a minute." />
         )}
 
-        {state === "loaded" && booking && (
+        {state === "loaded" && booking && view === "detail" && (
           <BookingCard
             booking={booking}
             showConfirm={showConfirm}
@@ -112,11 +137,32 @@ export default function ManageBookingPage() {
               setShowConfirm(false);
               setError(null);
             }}
+            onOpenReschedule={() => {
+              setRescheduleError(null);
+              setReschedulePick(null);
+              setView("reschedule");
+            }}
             reason={reason}
             onReasonChange={setReason}
             onCancel={onCancel}
             submitting={submitting}
             error={error}
+          />
+        )}
+
+        {state === "loaded" && booking && view === "reschedule" && (
+          <ReschedulePanel
+            booking={booking}
+            pick={reschedulePick}
+            onPick={setReschedulePick}
+            onSubmit={onReschedule}
+            onBack={() => {
+              setView("detail");
+              setReschedulePick(null);
+              setRescheduleError(null);
+            }}
+            submitting={submitting}
+            error={rescheduleError}
           />
         )}
       </main>
@@ -129,6 +175,7 @@ function BookingCard({
   showConfirm,
   onOpenConfirm,
   onCloseConfirm,
+  onOpenReschedule,
   reason,
   onReasonChange,
   onCancel,
@@ -139,6 +186,7 @@ function BookingCard({
   showConfirm: boolean;
   onOpenConfirm: () => void;
   onCloseConfirm: () => void;
+  onOpenReschedule: () => void;
   reason: string;
   onReasonChange: (v: string) => void;
   onCancel: () => void | Promise<void>;
@@ -210,14 +258,21 @@ function BookingCard({
             This booking has already ended.
           </p>
         ) : (
-          <div className="mt-6 flex justify-end">
+          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <button
               type="button"
               onClick={onOpenConfirm}
-              className="inline-flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
+              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onOpenReschedule}
+              className="inline-flex items-center justify-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200 dark:hover:bg-indigo-900/40"
             >
               <CalendarClock size={14} aria-hidden />
-              Cancel this booking
+              Reschedule
             </button>
           </div>
         )}
@@ -276,6 +331,161 @@ function BookingCard({
         </div>
       )}
     </>
+  );
+}
+
+function ReschedulePanel({
+  booking,
+  pick,
+  onPick,
+  onSubmit,
+  onBack,
+  submitting,
+  error,
+}: {
+  booking: ManagedBooking;
+  pick: { start: Date; end: Date } | null;
+  onPick: (iv: { start: Date; end: Date } | null) => void;
+  onSubmit: () => void | Promise<void>;
+  onBack: () => void;
+  submitting: boolean;
+  error: string | null;
+}) {
+  const availability = booking.availability;
+  const durationMin = Math.round(
+    (new Date(booking.end).getTime() - new Date(booking.start).getTime()) / 60_000,
+  );
+
+  const slots = useMemo(() => {
+    if (!availability) return [];
+    return computeFreeSlots(
+      availability.working_hours,
+      availability.busy,
+      new Date(availability.window.start),
+      new Date(availability.window.end),
+    );
+  }, [availability]);
+
+  const holidays = useMemo(() => {
+    if (!availability) return new Map<string, string>();
+    return new Map(availability.holidays.map((h) => [h.date, h.name]));
+  }, [availability]);
+
+  return (
+    <div className="space-y-4">
+      <button
+        type="button"
+        onClick={onBack}
+        className="inline-flex items-center gap-1.5 text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+      >
+        <ArrowLeft size={14} aria-hidden />
+        Back to booking
+      </button>
+
+      <header>
+        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-50">
+          Pick a new time
+        </h1>
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+          {booking.host_name}&apos;s next 8 weeks. Click any free slot to
+          confirm the move — the old event will be removed and a new invite
+          sent for the new time.
+        </p>
+      </header>
+
+      {!availability ? (
+        <FormError message="Couldn't load host availability." />
+      ) : slots.length === 0 ? (
+        <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+          No free time in the upcoming weeks.
+        </div>
+      ) : (
+        <SlotsCalendar
+          slots={slots}
+          durationMin={durationMin}
+          holidays={holidays}
+          workingHoursRange={workingHoursRangeFromHours(availability.working_hours)}
+          onIntervalClick={(iv) => {
+            // Snap to first `durationMin` chunk of the clicked free interval.
+            const start = new Date(iv.start);
+            const end = new Date(start.getTime() + durationMin * 60_000);
+            if (end.getTime() > iv.end.getTime()) return;
+            onPick({ start, end });
+          }}
+        />
+      )}
+
+      {pick && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !submitting) onPick(null);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+            <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+              Move meeting?
+            </h2>
+            <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+              Confirm the new time — {booking.host_name} will be notified and
+              the calendar event updated for everyone.
+            </p>
+            <dl className="mt-4 space-y-2 text-sm">
+              <div className="flex gap-3">
+                <dt className="w-16 text-xs uppercase tracking-wider text-zinc-500">Was</dt>
+                <dd className="text-zinc-800 dark:text-zinc-100">
+                  {new Date(booking.start).toLocaleString()}
+                </dd>
+              </div>
+              <div className="flex gap-3">
+                <dt className="w-16 text-xs uppercase tracking-wider text-zinc-500">Now</dt>
+                <dd className="font-medium text-indigo-700 dark:text-indigo-300">
+                  {pick.start.toLocaleString()} – {fmt(pick.end)}
+                </dd>
+              </div>
+            </dl>
+            {error && <FormError message={error} />}
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => onPick(null)}
+                disabled={submitting}
+                className="w-auto px-4"
+              >
+                Back
+              </Button>
+              <Button
+                type="button"
+                onClick={onSubmit}
+                disabled={submitting}
+                className="w-auto px-5"
+              >
+                {submitting ? "Moving…" : "Confirm move"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Render a Date as ISO 8601 in the browser's local time zone, matching
+ * the format BookingDialog uses on the create side. */
+function toLocalIso(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const tzOffset = -d.getTimezoneOffset();
+  const sign = tzOffset >= 0 ? "+" : "-";
+  const abs = Math.abs(tzOffset);
+  const oh = pad(Math.floor(abs / 60));
+  const om = pad(abs % 60);
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}` +
+    `${sign}${oh}:${om}`
   );
 }
 

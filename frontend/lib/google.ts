@@ -316,6 +316,15 @@ export type ManagedBooking = {
   visitor_name: string;
   visitor_email: string;
   cancelled_at: string | null;
+  /** Present only on GET — payload the reschedule view needs to render
+   * the host's availability calendar without a second API call. */
+  availability?: {
+    working_hours: import("./me").WorkingHours;
+    country: string;
+    window: { start: string; end: string };
+    busy: { start: string; end: string }[];
+    holidays: { date: string; name: string }[];
+  };
 };
 
 export async function getManagedBooking(uuid: string): Promise<ManagedBooking | null> {
@@ -336,6 +345,24 @@ export async function cancelManagedBooking(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ reason: reason ?? "" }),
+  });
+  const body = (await res.json().catch(() => ({}))) as
+    | ManagedBooking
+    | { detail?: string };
+  if (!res.ok) {
+    throw new Error(("detail" in body && body.detail) || `HTTP ${res.status}`);
+  }
+  return body as ManagedBooking;
+}
+
+export async function rescheduleManagedBooking(
+  uuid: string,
+  input: { start: string; end: string },
+): Promise<ManagedBooking> {
+  const res = await fetch(`/api/public/bookings/${uuid}/reschedule`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
   });
   const body = (await res.json().catch(() => ({}))) as
     | ManagedBooking

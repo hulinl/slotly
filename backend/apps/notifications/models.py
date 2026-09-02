@@ -35,6 +35,8 @@ class Notification(models.Model):
         BOOKING_REQUEST_RECEIVED = "booking.request_received", "Someone wants to meet in person"
         # A visitor cancelled a confirmed booking from the /b/<uuid> page.
         BOOKING_CANCELLED_BY_VISITOR = "booking.cancelled_by_visitor", "A visitor cancelled a booking"
+        # A visitor moved a confirmed booking to a different time.
+        BOOKING_RESCHEDULED_BY_VISITOR = "booking.rescheduled_by_visitor", "A visitor rescheduled a booking"
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,

@@ -861,8 +861,10 @@ class PublicMeetingCreateView(APIView):
 
 class PublicBookingManageView(APIView):
     """
-    GET  /api/public/bookings/<uuid> — booking details for the manage page.
-    POST /api/public/bookings/<uuid>/cancel body: {reason?} — cancel it.
+    GET  /api/public/bookings/<uuid> — booking details + host availability
+         (so the manage page can render a Reschedule calendar without a
+         second round-trip).
+    POST /api/public/bookings/<uuid> body: {reason?} — cancel it.
     """
 
     permission_classes = [AllowAny]
@@ -872,7 +874,11 @@ class PublicBookingManageView(APIView):
         booking = _get_active_booking(uuid_)
         if booking is None:
             return Response(status=404)
-        return Response(_serialize_booking(booking))
+        data = _serialize_booking(booking)
+        # Availability payload matches /api/public/profile/<token> shape so
+        # the frontend can reuse computeFreeSlots + SlotsCalendar unchanged.
+        data["availability"] = _host_availability_for_reschedule(booking.host)
+        return Response(data)
 
     def post(self, request: Request, uuid_) -> Response:
         booking = _get_active_booking(uuid_)
@@ -941,6 +947,188 @@ def _serialize_booking(b: Booking) -> dict:
         "visitor_email": b.visitor_email,
         "cancelled_at": b.cancelled_at.isoformat() if b.cancelled_at else None,
     }
+
+
+def _host_availability_for_reschedule(host) -> dict:
+    """Same shape as /api/public/profile/<token>'s availability payload,
+    but sourced from the visitor's Booking (no share_token needed). This
+    lets the visitor reschedule even if the host has since turned off
+    their public booking link."""
+    from datetime import timedelta as _td
+    from django.db.models import Q as _Q
+    from apps.availability.models import Unavailability as _Un
+    from apps.calendars.models import CalendarEvent as _CE
+
+    from apps.accounts.views import _holidays_in_range
+
+    now = djtz.now()
+    window_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    window_end = window_start + _td(days=56)
+
+    busy: list[tuple] = []
+    for ev in _CE.objects.filter(
+        _Q(transp=_CE.Transparency.OPAQUE) | _Q(is_all_day=True),
+        calendar__owner_id=host.pk,
+        calendar__include_in_busy=True,
+        dtstart__lt=window_end,
+        dtend__gt=window_start,
+    ).exclude(status=_CE.Status.CANCELLED).values("dtstart", "dtend"):
+        busy.append((ev["dtstart"], ev["dtend"]))
+    for u in _Un.objects.filter(
+        user_id=host.pk,
+        starts_at__lt=window_end,
+        ends_at__gt=window_start,
+    ).values("starts_at", "ends_at"):
+        busy.append((u["starts_at"], u["ends_at"]))
+
+    return {
+        "working_hours": host.working_hours,
+        "country": host.country,
+        "window": {"start": window_start.isoformat(), "end": window_end.isoformat()},
+        "busy": [{"start": s.isoformat(), "end": e.isoformat()} for s, e in busy],
+        "holidays": _holidays_in_range(host.country, window_start.date(), window_end.date()),
+    }
+
+
+class PublicBookingRescheduleView(APIView):
+    """POST /api/public/bookings/<uuid>/reschedule  body: {start, end}
+
+    Visitor picks a new slot. We delete the old provider event, insert a
+    new one with the same attendees/description (same manage URL — the
+    Booking uuid is unchanged), and update the Booking row's time +
+    event_id. If the delete succeeds but the create fails, we leave the
+    Booking cancelled — the visitor can retry, but their old slot is
+    already gone. That's the safer failure mode than a double-booking.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes: list = []
+
+    def post(self, request: Request, uuid_) -> Response:
+        from django.conf import settings as _settings
+
+        booking = _get_active_booking(uuid_)
+        if booking is None:
+            return Response(status=404)
+        if booking.status != Booking.Status.CONFIRMED:
+            return Response({"detail": "Only confirmed bookings can be rescheduled."}, status=409)
+        if booking.end_at < djtz.now():
+            return Response({"detail": "This booking already ended — book a new one."}, status=409)
+
+        try:
+            new_start = _parse_iso_dt(request.data.get("start", ""))
+            new_end = _parse_iso_dt(request.data.get("end", ""))
+        except ValueError:
+            return Response({"detail": "start/end must be ISO 8601 datetimes."}, status=400)
+        if new_end <= new_start:
+            return Response({"detail": "end must be after start."}, status=400)
+        if (new_end - new_start) > timedelta(hours=12):
+            return Response({"detail": "Meeting longer than 12 hours refused."}, status=400)
+        if new_end < djtz.now() - timedelta(minutes=2):
+            return Response({"detail": "Cannot reschedule to a slot in the past."}, status=400)
+        if new_start == booking.start_at and new_end == booking.end_at:
+            # No-op — return current state so the frontend doesn't error out.
+            return Response(_serialize_booking(booking))
+
+        # Re-check host availability at the new slot. Old booking still on
+        # the calendar right now — exclude it from the conflict check by
+        # temporarily marking it non-blocking (we're about to delete it).
+        conflict_user = _first_busy_user(
+            [booking.host],
+            new_start,
+            new_end,
+            exclude_event_id=booking.event_id,
+        )
+        if conflict_user is not None:
+            return Response(
+                {"detail": "The host is no longer free at that time — pick another slot."},
+                status=409,
+            )
+
+        try:
+            create_fn, delete_fn = _provider_for(booking.provider)
+        except ValueError:
+            return Response({"detail": "Unknown provider."}, status=500)
+
+        # Delete old event. Failure here isn't fatal — we still try to
+        # create the new one. If both fail we haven't broken the booking.
+        try:
+            if booking.event_id:
+                delete_fn(
+                    booking.host,
+                    calendar_id=booking.calendar_id,
+                    event_id=booking.event_id,
+                )
+        except (GoogleOAuthError, _graph.MicrosoftOAuthError):
+            return Response(
+                {"detail": "Reconnect needed on the host's side — try again later."},
+                status=502,
+            )
+        except (GoogleApiError, _graph.MicrosoftApiError) as exc:
+            logger.info("reschedule delete failed for booking %s: %s", booking.uuid, exc)
+
+        # Rebuild description with the same manage URL (uuid unchanged).
+        base_description = (
+            f"Rescheduled via your Slotly manage link by "
+            f"{booking.visitor_name or booking.visitor_email}."
+        )
+        if booking.notes:
+            base_description += f"\n\nOriginal note:\n{booking.notes}"
+        description = _description_with_manage_link(base_description, booking)
+
+        try:
+            event = create_fn(
+                booking.host,
+                calendar_id=booking.calendar_id,
+                summary=booking.title or f"Meeting with {booking.visitor_name}",
+                description=description,
+                start_iso=new_start.isoformat(),
+                end_iso=new_end.isoformat(),
+                time_zone=_settings.TIME_ZONE,
+                attendees=[booking.visitor_email],
+                include_online_meeting=(booking.kind == Booking.Kind.ONLINE),
+                location=booking.location,
+            )
+        except (GoogleOAuthError, _graph.MicrosoftOAuthError):
+            return Response(
+                {"detail": "Reconnect needed on the host's side — try again later."},
+                status=502,
+            )
+        except (GoogleApiError, _graph.MicrosoftApiError) as exc:
+            logger.info("reschedule insert failed for booking %s: %s", booking.uuid, exc)
+            return Response(
+                {"detail": "Couldn't create the new event. Please try again."},
+                status=502,
+            )
+
+        old_start = booking.start_at
+        booking.start_at = new_start
+        booking.end_at = new_end
+        booking.event_id = event.get("id", "") or booking.event_id
+        # Any T-24h reminder we may have already sent no longer applies —
+        # reset so a future run mails for the new time.
+        booking.reminded_at = None
+        booking.save(update_fields=["start_at", "end_at", "event_id", "reminded_at"])
+
+        _notify_booking_rescheduled(booking, old_start)
+        return Response(_serialize_booking(booking))
+
+
+def _notify_booking_rescheduled(booking: Booking, old_start) -> None:
+    """In-app + email the host that the visitor moved their booking."""
+    from apps.notifications.dispatch import notify as _notify
+    from apps.notifications.models import Notification as _N
+
+    _notify(
+        booking.host,
+        _N.Type.BOOKING_RESCHEDULED_BY_VISITOR,
+        {
+            "visitor_name": booking.visitor_name,
+            "visitor_email": booking.visitor_email,
+            "from_when": old_start.strftime("%a %d %b %H:%M"),
+            "to_when": booking.start_at.strftime("%a %d %b %H:%M"),
+        },
+    )
 
 
 def _notify_booking_cancelled(booking: Booking) -> None:
@@ -1408,23 +1596,33 @@ def _can_view_peer(caller, peer) -> bool:
     return bool(peer.share_enabled)
 
 
-def _first_busy_user(users, start_dt, end_dt):
+def _first_busy_user(users, start_dt, end_dt, *, exclude_event_id: str = ""):
     """Return the first user in ``users`` whose calendar or unavailability
     overlaps [start_dt, end_dt), or None if all are free. Mirrors the busy
-    aggregation used by the availability views."""
+    aggregation used by the availability views.
+
+    ``exclude_event_id`` skips a specific provider event id — used by
+    reschedule so the booking being moved doesn't block itself. The check
+    is by provider `uid` (matches how apps.calendars stores it), so this
+    only helps when the ICS sync has pulled the event's uid; otherwise
+    the exclusion is a no-op (rare, tolerable).
+    """
     from django.db.models import Q as _Q
     from apps.availability.models import Unavailability as _Un
     from apps.calendars.models import CalendarEvent as _CE
 
     ids = [u.pk for u in users]
     busy_ids = set()
-    for ev in _CE.objects.filter(
+    events_qs = _CE.objects.filter(
         _Q(transp=_CE.Transparency.OPAQUE) | _Q(is_all_day=True),
         calendar__owner_id__in=ids,
         calendar__include_in_busy=True,
         dtstart__lt=end_dt,
         dtend__gt=start_dt,
-    ).exclude(status=_CE.Status.CANCELLED).values("calendar__owner_id")[:1]:
+    ).exclude(status=_CE.Status.CANCELLED)
+    if exclude_event_id:
+        events_qs = events_qs.exclude(uid=exclude_event_id)
+    for ev in events_qs.values("calendar__owner_id")[:1]:
         busy_ids.add(ev["calendar__owner_id"])
     if len(busy_ids) < len(ids):
         for u in _Un.objects.filter(
