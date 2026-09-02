@@ -43,7 +43,7 @@ from .google_client import (
     fetch_userinfo,
     list_writable_calendars,
 )
-from .models import Booking, BookingRequest, GoogleAccount, MicrosoftAccount
+from .models import Booking, BookingRequest, GoogleAccount, MeetingType, MicrosoftAccount
 from .security import encrypt
 
 logger = logging.getLogger(__name__)
@@ -725,14 +725,29 @@ class PublicMeetingCreateView(APIView):
         if not _looks_like_email(visitor_email):
             return Response({"visitor_email": "Please enter a valid email."}, status=400)
 
-        # `kind` splits the flow. Default "online" preserves the old
-        # behavior. "physical" opens a BookingRequest for the host to
-        # approve — the visitor gets a "waiting for approval" screen and
-        # no calendar event is created yet.
-        kind = (body.get("kind") or "online").strip().lower()
-        if kind not in ("online", "physical"):
-            return Response({"kind": "Must be 'online' or 'physical'."}, status=400)
-        location = _clean_text(body.get("location"), fallback="", maxlen=300)
+        # If the visitor booked through a MeetingType card, the type
+        # dictates duration + kind + default location. This locks the
+        # server-authoritative version so a manipulated client can't
+        # sneak in a longer slot or the wrong kind.
+        meeting_type: MeetingType | None = None
+        type_slug = body.get("type_slug")
+        if type_slug:
+            meeting_type = MeetingType.objects.filter(
+                host=user, slug=type_slug, is_active=True,
+            ).first()
+            if meeting_type is None:
+                return Response({"type_slug": "Unknown or inactive meeting type."}, status=400)
+            kind = meeting_type.kind
+            location = _clean_text(body.get("location"), fallback=meeting_type.location, maxlen=300)
+        else:
+            # `kind` splits the flow. Default "online" preserves the old
+            # behavior. "physical" opens a BookingRequest for the host to
+            # approve — the visitor gets a "waiting for approval" screen and
+            # no calendar event is created yet.
+            kind = (body.get("kind") or "online").strip().lower()
+            if kind not in ("online", "physical"):
+                return Response({"kind": "Must be 'online' or 'physical'."}, status=400)
+            location = _clean_text(body.get("location"), fallback="", maxlen=300)
         if kind == "physical" and not location:
             return Response({"location": "Please tell the host where to meet."}, status=400)
 
@@ -743,6 +758,11 @@ class PublicMeetingCreateView(APIView):
             return Response({"detail": "start/end must be ISO 8601 datetimes."}, status=400)
         if end_dt <= start_dt:
             return Response({"detail": "end must be after start."}, status=400)
+        # If a meeting type is in play, force the end to match its duration —
+        # visitor's client shouldn't be allowed to stretch a "15-min chat"
+        # into an hour.
+        if meeting_type is not None:
+            end_dt = start_dt + timedelta(minutes=meeting_type.duration_min)
         if (end_dt - start_dt) > timedelta(hours=12):
             return Response({"detail": "Meeting longer than 12 hours refused."}, status=400)
         # Don't book into the past (with 2-min grace for clock skew).
@@ -788,10 +808,16 @@ class PublicMeetingCreateView(APIView):
                 status=409,
             )
 
-        default_title = f"Meeting with {visitor_name}"
+        default_title = (
+            meeting_type.name
+            if meeting_type is not None
+            else f"Meeting with {visitor_name}"
+        )
         title = _clean_text(body.get("title"), fallback=default_title, maxlen=200)
         notes_from_visitor = _clean_text(body.get("notes"), fallback="", maxlen=2000)
         base_description = f"Booked via your Slotly public link by {visitor_name} <{visitor_email}>."
+        if meeting_type is not None and meeting_type.description:
+            base_description += f"\n\n{meeting_type.description}"
         if notes_from_visitor:
             base_description += f"\n\nNote:\n{notes_from_visitor}"
 
@@ -1155,6 +1181,169 @@ def _notify_booking_cancelled(booking: Booking) -> None:
 # API directly. Physical bookings live here until the host clicks approve
 # in the UI, at which point we create the calendar event.
 # ---------------------------------------------------------------------------
+
+
+class MeetingTypeListView(APIView):
+    """GET  /api/meeting-types — host's own meeting types (all, incl. inactive).
+    POST /api/meeting-types  body: {name, duration_min, kind, description?,
+    location?, color?, is_active?} — create new one, slug auto-derived."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        rows = MeetingType.objects.filter(host=request.user).order_by("display_order", "id")
+        return Response({"types": [_serialize_meeting_type(t) for t in rows]})
+
+    def post(self, request: Request) -> Response:
+        cleaned, err = _validate_meeting_type_payload(request.data, host=request.user, existing=None)
+        if err is not None:
+            return Response(err, status=400)
+        t = MeetingType.objects.create(host=request.user, **cleaned)
+        return Response(_serialize_meeting_type(t), status=201)
+
+
+class MeetingTypeDetailView(APIView):
+    """PATCH /api/meeting-types/<id>  body: any subset of the create fields.
+    DELETE /api/meeting-types/<id>."""
+
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request: Request, pk: int) -> Response:
+        t = get_object_or_404(MeetingType, pk=pk, host=request.user)
+        cleaned, err = _validate_meeting_type_payload(request.data, host=request.user, existing=t)
+        if err is not None:
+            return Response(err, status=400)
+        for field, value in cleaned.items():
+            setattr(t, field, value)
+        t.save()
+        return Response(_serialize_meeting_type(t))
+
+    def delete(self, request: Request, pk: int) -> Response:
+        deleted, _ = MeetingType.objects.filter(pk=pk, host=request.user).delete()
+        if deleted == 0:
+            return Response(status=404)
+        return Response(status=204)
+
+
+def _serialize_meeting_type(t: MeetingType) -> dict:
+    return {
+        "id": t.pk,
+        "name": t.name,
+        "slug": t.slug,
+        "description": t.description,
+        "duration_min": t.duration_min,
+        "kind": t.kind,
+        "location": t.location,
+        "color": t.color,
+        "is_active": t.is_active,
+        "display_order": t.display_order,
+    }
+
+
+_ALLOWED_DURATIONS = {15, 30, 45, 60, 90, 120, 180, 240}
+_HEX_COLOUR_RE = None  # lazily compiled
+
+
+def _validate_meeting_type_payload(
+    body: dict,
+    *,
+    host,
+    existing: MeetingType | None,
+) -> tuple[dict, dict | None]:
+    """Return (cleaned_fields, error_response_or_none). ``existing`` is the
+    row being patched; None for create. Slug auto-derives from name on
+    create if not supplied and dedupes against the host's other types."""
+    global _HEX_COLOUR_RE
+    if _HEX_COLOUR_RE is None:
+        import re as _re
+        _HEX_COLOUR_RE = _re.compile(r"^#[0-9a-fA-F]{6}$")
+
+    cleaned: dict = {}
+
+    def _get(key: str):
+        return body.get(key) if isinstance(body, dict) else None
+
+    name = _get("name")
+    if name is not None:
+        name = str(name).strip()[:80]
+        if not name:
+            return {}, {"name": "Required non-empty string."}
+        cleaned["name"] = name
+
+    slug = _get("slug")
+    if slug is not None:
+        from django.utils.text import slugify
+        slug = slugify(str(slug))[:60]
+        if not slug:
+            return {}, {"slug": "Slug must contain URL-friendly characters."}
+        cleaned["slug"] = slug
+    elif existing is None:
+        # Auto-derive on create.
+        from django.utils.text import slugify
+        base = slugify(cleaned.get("name") or "")
+        if not base:
+            return {}, {"slug": "Give the type a name so we can generate a slug."}
+        slug = base
+        n = 2
+        # Dedupe within this host's slugs.
+        existing_slugs = set(
+            MeetingType.objects.filter(host=host).values_list("slug", flat=True),
+        )
+        while slug in existing_slugs:
+            slug = f"{base}-{n}"
+            n += 1
+        cleaned["slug"] = slug
+
+    if "description" in body:
+        cleaned["description"] = str(_get("description") or "").strip()[:1000]
+
+    if "duration_min" in body:
+        try:
+            d = int(_get("duration_min"))
+        except (TypeError, ValueError):
+            return {}, {"duration_min": "Must be an integer."}
+        if d not in _ALLOWED_DURATIONS:
+            return {}, {"duration_min": f"Must be one of {sorted(_ALLOWED_DURATIONS)}."}
+        cleaned["duration_min"] = d
+
+    if "kind" in body:
+        k = str(_get("kind") or "").lower()
+        if k not in ("online", "physical"):
+            return {}, {"kind": "Must be 'online' or 'physical'."}
+        cleaned["kind"] = k
+
+    if "location" in body:
+        cleaned["location"] = str(_get("location") or "").strip()[:300]
+
+    if "color" in body:
+        col = str(_get("color") or "").strip()
+        if not _HEX_COLOUR_RE.match(col):
+            return {}, {"color": "Must be a hex colour like #4f46e5."}
+        cleaned["color"] = col
+
+    if "is_active" in body:
+        cleaned["is_active"] = bool(_get("is_active"))
+
+    if "display_order" in body:
+        try:
+            cleaned["display_order"] = max(0, int(_get("display_order")))
+        except (TypeError, ValueError):
+            return {}, {"display_order": "Must be an integer."}
+
+    # Uniqueness: slug per host.
+    if "slug" in cleaned:
+        qs = MeetingType.objects.filter(host=host, slug=cleaned["slug"])
+        if existing is not None:
+            qs = qs.exclude(pk=existing.pk)
+        if qs.exists():
+            return {}, {"slug": "You already have a meeting type with that slug."}
+
+    if existing is None and "duration_min" not in cleaned:
+        return {}, {"duration_min": "Required on create."}
+    if existing is None and "name" not in cleaned:
+        return {}, {"name": "Required on create."}
+
+    return cleaned, None
 
 
 class HostBookingCancelView(APIView):

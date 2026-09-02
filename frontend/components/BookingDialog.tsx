@@ -36,6 +36,14 @@ const ALL_DURATIONS = [15, 30, 45, 60, 90, 120];
 const START_STEP_MIN = 15;
 const CHIP_LIMIT = 12; // switch to a dropdown when there are more slots than this
 
+export type LockedMeetingType = {
+  name: string;
+  duration_min: number;
+  kind: "online" | "physical";
+  location?: string;
+  description?: string;
+};
+
 export function BookingDialog({
   open,
   onClose,
@@ -49,6 +57,7 @@ export function BookingDialog({
   onSubmit,
   hostName,
   allowPhysical = false,
+  lockedType = null,
 }: {
   open: boolean;
   onClose: () => void;
@@ -69,6 +78,10 @@ export function BookingDialog({
   /** Show the Online / In-person selector. Physical requests need host
    * approval; online books immediately. Only exposed on the public flow. */
   allowPhysical?: boolean;
+  /** When set, kind + duration are dictated by the host-defined meeting
+   * type — no toggles, single-choice chip pickers, title auto-fills to
+   * the type's name. Overrides `allowPhysical`. */
+  lockedType?: LockedMeetingType | null;
 }) {
   const [title, setTitle] = useState(defaultTitle);
   const [notes, setNotes] = useState("");
@@ -97,9 +110,15 @@ export function BookingDialog({
 
   const durationOptions = useMemo(() => {
     if (intervalLenMin <= 0) return [] as number[];
+    if (lockedType) {
+      // Locked: only the type's own duration is offered (still gated on
+      // whether it fits the clicked free block; if not, no start options
+      // will render and the visitor sees the "no fit" message).
+      return lockedType.duration_min <= intervalLenMin ? [lockedType.duration_min] : [];
+    }
     const fits = ALL_DURATIONS.filter((d) => d <= intervalLenMin);
     return fits.length > 0 ? fits : [intervalLenMin];
-  }, [intervalLenMin]);
+  }, [intervalLenMin, lockedType]);
 
   const startOptions = useMemo(() => {
     if (!interval) return [] as number[];
@@ -119,20 +138,22 @@ export function BookingDialog({
   // defaults for duration + start based on the newly-clicked interval.
   useEffect(() => {
     if (!open || !interval) return;
-    setTitle(defaultTitle);
+    setTitle(lockedType?.name ?? defaultTitle);
     setNotes("");
     setVisitorName("");
     setVisitorEmail("");
-    setKind("online");
-    setLocation("");
+    setKind(lockedType?.kind ?? "online");
+    setLocation(lockedType?.location ?? "");
     setHp("");
     setShowNotes(false);
-    const d = ALL_DURATIONS.find((x) => x === defaultDurationMin && x <= intervalLenMin)
-      ?? ALL_DURATIONS.filter((x) => x <= intervalLenMin).slice(-1)[0]
-      ?? intervalLenMin;
-    setDurationMin(d);
+    const initialDuration = lockedType
+      ? lockedType.duration_min
+      : (ALL_DURATIONS.find((x) => x === defaultDurationMin && x <= intervalLenMin)
+        ?? ALL_DURATIONS.filter((x) => x <= intervalLenMin).slice(-1)[0]
+        ?? intervalLenMin);
+    setDurationMin(initialDuration);
     setStartMin(null);
-  }, [open, interval, defaultTitle, defaultDurationMin, intervalLenMin]);
+  }, [open, interval, defaultTitle, defaultDurationMin, intervalLenMin, lockedType]);
 
   // If the current start becomes invalid (duration change shifts the last-
   // allowed start earlier), snap to the earliest still-valid option.
@@ -230,7 +251,32 @@ export function BookingDialog({
             theme-aware scrollbar (never the default black bar on dark
             surfaces). */}
         <div className="flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3 [scrollbar-width:thin] [scrollbar-color:theme(colors.zinc.300)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded [&::-webkit-scrollbar-thumb]:bg-zinc-300 [&::-webkit-scrollbar-track]:bg-transparent dark:[scrollbar-color:theme(colors.zinc.700)_transparent] dark:[&::-webkit-scrollbar-thumb]:bg-zinc-700 sm:space-y-4 sm:px-5 sm:py-4">
-          {allowPhysical && (
+          {/* Locked-type flow shows a static banner instead of the toggle so
+              the visitor sees which preset they're booking. */}
+          {lockedType ? (
+            <div
+              className={
+                "rounded-lg border p-3 " +
+                (lockedType.kind === "physical"
+                  ? "border-amber-300 bg-amber-50 dark:border-amber-800/60 dark:bg-amber-950/30"
+                  : "border-indigo-300 bg-indigo-50 dark:border-indigo-800/60 dark:bg-indigo-950/30")
+              }
+            >
+              <div className="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                {lockedType.kind === "physical" ? (
+                  <MapPin size={14} aria-hidden className="text-amber-700 dark:text-amber-300" />
+                ) : (
+                  <Video size={14} aria-hidden className="text-indigo-600 dark:text-indigo-300" />
+                )}
+                {lockedType.name} · {lockedType.duration_min} min
+              </div>
+              {lockedType.description && (
+                <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300">
+                  {lockedType.description}
+                </p>
+              )}
+            </div>
+          ) : allowPhysical && (
             <fieldset>
               <legend className="sr-only">Meeting type</legend>
               <div className="grid grid-cols-2 gap-2">

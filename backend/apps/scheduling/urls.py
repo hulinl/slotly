@@ -7,6 +7,8 @@ from .views import (
     HostBookingCancelView,
     HostBookingListView,
     MeetingCreateView,
+    MeetingTypeDetailView,
+    MeetingTypeListView,
     MicrosoftAccountStatusView,
     MicrosoftOAuthStartView,
     MicrosoftWritableCalendarsView,
@@ -35,6 +37,12 @@ urlpatterns = [
         "microsoft-account/writable-calendars",
         MicrosoftWritableCalendarsView.as_view(),
         name="microsoft-account-writable-calendars",
+    ),
+    path("meeting-types", MeetingTypeListView.as_view(), name="meeting-types-list"),
+    path(
+        "meeting-types/<int:pk>",
+        MeetingTypeDetailView.as_view(),
+        name="meeting-types-detail",
     ),
     path("meetings", MeetingCreateView.as_view(), name="meetings-create"),
     path(

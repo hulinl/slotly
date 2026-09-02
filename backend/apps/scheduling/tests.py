@@ -276,7 +276,7 @@ class StatusAndDisconnectTests(TestCase):
 from django.contrib.auth import get_user_model  # noqa: E402
 from django.core import mail  # noqa: E402
 
-from .models import Booking, BookingRequest  # noqa: E402
+from .models import Booking, BookingRequest, MeetingType  # noqa: E402
 
 
 def _connect_google(user):
@@ -787,6 +787,131 @@ class MeetingCreateGroupTests(TestCase):
         resp = self.client.post(
             reverse("meetings-create"),
             {"attendee_user_ids": [], "start": start, "end": end},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+
+class MeetingTypeTests(TestCase):
+    """CRUD + slug generation for meeting-type presets."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.host = UserModel.objects.create_user(email="host@test.local", password="pwpw12345xyz")
+        self.client = APIClient()
+        self.client.force_authenticate(self.host)
+
+    def test_create_auto_generates_slug(self):
+        resp = self.client.post(
+            reverse("meeting-types-list"),
+            {"name": "15-min Quick Chat", "duration_min": 15},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        self.assertEqual(resp.json()["slug"], "15-min-quick-chat")
+
+    def test_create_dedupes_slug_within_host(self):
+        MeetingType.objects.create(host=self.host, name="Chat", slug="chat", duration_min=30)
+        resp = self.client.post(
+            reverse("meeting-types-list"),
+            {"name": "Chat", "duration_min": 45},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(resp.json()["slug"], "chat-2")
+
+    def test_create_rejects_invalid_duration(self):
+        resp = self.client.post(
+            reverse("meeting-types-list"),
+            {"name": "Random", "duration_min": 17},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("duration_min", resp.json())
+
+    def test_patch_updates_fields(self):
+        t = MeetingType.objects.create(
+            host=self.host, name="Chat", slug="chat", duration_min=15,
+        )
+        resp = self.client.patch(
+            reverse("meeting-types-detail", args=[t.pk]),
+            {"duration_min": 30, "description": "Now longer"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        t.refresh_from_db()
+        self.assertEqual(t.duration_min, 30)
+        self.assertEqual(t.description, "Now longer")
+
+    def test_delete_scoped_to_owner(self):
+        t = MeetingType.objects.create(
+            host=self.host, name="Chat", slug="chat", duration_min=15,
+        )
+        UserModel = get_user_model()
+        other = UserModel.objects.create_user(email="other@test.local", password="pwpw12345xyz")
+        self.client.force_authenticate(other)
+        resp = self.client.delete(reverse("meeting-types-detail", args=[t.pk]))
+        self.assertEqual(resp.status_code, 404)
+        self.assertTrue(MeetingType.objects.filter(pk=t.pk).exists())
+
+
+class PublicMeetingWithTypeTests(TestCase):
+    """POST /api/public/meetings/<token> honors type_slug — duration + kind
+    baked into the type overrule anything the visitor's client sends."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.host = UserModel.objects.create_user(email="host@test.local", password="pwpw12345xyz")
+        self.host.share_enabled = True
+        self.host.save(update_fields=["share_enabled"])
+        _connect_google(self.host)
+        MeetingType.objects.create(
+            host=self.host,
+            name="Discovery",
+            slug="discovery",
+            duration_min=45,
+            kind=MeetingType.Kind.ONLINE,
+        )
+        self.client = APIClient()
+
+    def test_type_slug_forces_duration(self):
+        # Visitor's end value is 30 min after start; type says 45.
+        start = (djtz.now() + timedelta(hours=24)).isoformat()
+        wrong_end = (djtz.now() + timedelta(hours=24, minutes=30)).isoformat()
+        with patch("apps.scheduling.views.create_calendar_event") as mc:
+            mc.return_value = {"id": "e1"}
+            resp = self.client.post(
+                reverse("public-meetings-create", args=[str(self.host.share_token)]),
+                {
+                    "visitor_name": "Rey",
+                    "visitor_email": "rey@example.com",
+                    "start": start,
+                    "end": wrong_end,
+                    "type_slug": "discovery",
+                },
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        _, kwargs = mc.call_args
+        # end_iso is 45 min after start, not the 30 the visitor sent.
+        from datetime import datetime as _dt
+        actual_start = _dt.fromisoformat(kwargs["start_iso"])
+        actual_end = _dt.fromisoformat(kwargs["end_iso"])
+        self.assertEqual((actual_end - actual_start).total_seconds() / 60, 45)
+        self.assertEqual(kwargs["summary"], "Discovery")
+
+    def test_unknown_type_slug_400(self):
+        start = (djtz.now() + timedelta(hours=24)).isoformat()
+        end = (djtz.now() + timedelta(hours=24, minutes=30)).isoformat()
+        resp = self.client.post(
+            reverse("public-meetings-create", args=[str(self.host.share_token)]),
+            {
+                "visitor_name": "Rey",
+                "visitor_email": "rey@example.com",
+                "start": start,
+                "end": end,
+                "type_slug": "nonexistent",
+            },
             format="json",
         )
         self.assertEqual(resp.status_code, 400)

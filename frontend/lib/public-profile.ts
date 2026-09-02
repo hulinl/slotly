@@ -23,6 +23,10 @@ export type PublicProfileResponse = {
    * availability endpoints (they're consumed by authed views that make
    * their own connect-status calls). */
   booking_enabled?: boolean;
+  /** Active MeetingType presets the visitor can pick from. Empty list
+   * means the host hasn't defined any and /u/[token] should show the
+   * generic "pick any free time" flow. */
+  meeting_types?: import("./meeting-types").PublicMeetingType[];
 };
 
 export class PublicProfileNotFoundError extends Error {

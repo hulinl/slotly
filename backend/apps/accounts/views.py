@@ -409,6 +409,15 @@ class PublicProfileView(APIView):
             busy.append((u["starts_at"], u["ends_at"]))
 
         profile = PublicProfileSerializer(user, context={"request": request}).data
+        # Active meeting types the visitor can pick from. Empty list means
+        # the host hasn't defined any — /u/<token> falls back to the
+        # generic "pick any free time" flow.
+        from apps.scheduling.models import MeetingType as _MT
+        types = list(
+            _MT.objects.filter(host=user, is_active=True)
+            .order_by("display_order", "id")
+            .values("slug", "name", "description", "duration_min", "kind", "location", "color")
+        )
         return Response({
             "profile": profile,
             "window": {
@@ -424,6 +433,7 @@ class PublicProfileView(APIView):
             # shows a soft "not yet accepting online bookings" banner and
             # hides the booking dialog.
             "booking_enabled": _has_writable_provider(user),
+            "meeting_types": types,
         })
 
 

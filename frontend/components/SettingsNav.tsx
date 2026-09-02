@@ -16,6 +16,7 @@ import {
   Bell,
   CalendarDays,
   Clock,
+  Layers,
   UserCircle,
   UserCog,
   type LucideIcon,
@@ -34,6 +35,7 @@ const TABS: SettingsTab[] = [
   { href: "/settings", label: "Profile", icon: UserCircle, activePath: "/settings" },
   { href: "/settings/working-hours", label: "Working hours", icon: Clock, activePath: "/settings/working-hours" },
   { href: "/settings/calendars", label: "Calendars", icon: CalendarDays, activePath: "/settings/calendars" },
+  { href: "/settings/meeting-types", label: "Meeting types", icon: Layers, activePath: "/settings/meeting-types" },
   { href: "/settings/notifications", label: "Notifications", icon: Bell, activePath: "/settings/notifications" },
   { href: "/settings/account", label: "Account", icon: UserCog, activePath: "/settings/account" },
 ];

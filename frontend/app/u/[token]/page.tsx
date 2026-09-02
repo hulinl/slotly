@@ -7,13 +7,14 @@
  */
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
-import { Globe } from "lucide-react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { ArrowLeft, ArrowRight, Globe, MapPin, Video } from "lucide-react";
 import { BookingDialog, type BookingSubmit } from "@/components/BookingDialog";
 import { Logo } from "@/components/Logo";
 import { SlotsCalendar } from "@/components/SlotsCalendar";
 import { createPublicMeeting } from "@/lib/google";
+import type { PublicMeetingType } from "@/lib/meeting-types";
 import {
   colorFromName,
   computeFreeSlots,
@@ -25,8 +26,19 @@ import {
 } from "@/lib/public-profile";
 
 export default function PublicProfilePage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-zinc-500">Loading…</div>}>
+      <PublicProfilePageInner />
+    </Suspense>
+  );
+}
+
+function PublicProfilePageInner() {
   const params = useParams<{ token: string }>();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const token = params.token;
+  const selectedSlug = searchParams?.get("type") ?? null;
 
   const [data, setData] = useState<PublicProfileResponse | null>(null);
   const [error, setError] = useState<"not_found" | "load" | null>(null);
@@ -55,6 +67,11 @@ export default function PublicProfilePage() {
       alive = false;
     };
   }, [token]);
+
+  const selectedType: PublicMeetingType | null = useMemo(() => {
+    if (!data || !selectedSlug) return null;
+    return data.meeting_types?.find((t) => t.slug === selectedSlug) ?? null;
+  }, [data, selectedSlug]);
 
   const slots = useMemo(() => {
     if (!data) return [];
@@ -150,26 +167,42 @@ export default function PublicProfilePage() {
       </header>
 
       <section className="mx-auto max-w-3xl px-6 py-8">
-        {slots.length === 0 ? (
+        {data.booking_enabled === false && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+            <p className="font-medium">
+              {display_name} isn&apos;t accepting direct bookings yet.
+            </p>
+            <p className="mt-1 text-amber-800 dark:text-amber-200/80">
+              You can still see their availability below — reach out
+              another way to arrange a time.
+            </p>
+          </div>
+        )}
+        {(data.meeting_types?.length ?? 0) > 0 && selectedType === null ? (
+          // Landing: pick a meeting type first.
+          <TypeList
+            types={data.meeting_types ?? []}
+            onPick={(slug) => router.push(`?type=${encodeURIComponent(slug)}`)}
+          />
+        ) : slots.length === 0 ? (
           <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
             No free time in the upcoming weeks.
           </div>
         ) : (
           <>
-            {data.booking_enabled === false && (
-              <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
-                <p className="font-medium">
-                  {display_name} isn&apos;t accepting direct bookings yet.
-                </p>
-                <p className="mt-1 text-amber-800 dark:text-amber-200/80">
-                  You can still see their availability below — reach out
-                  another way to arrange a time.
-                </p>
-              </div>
+            {selectedType && (
+              <button
+                type="button"
+                onClick={() => router.push(location.pathname)}
+                className="mb-3 inline-flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+              >
+                <ArrowLeft size={12} aria-hidden />
+                Back to meeting types
+              </button>
             )}
             <SlotsCalendar
               slots={slots}
-              durationMin={30}
+              durationMin={selectedType?.duration_min ?? 30}
               holidays={holidayMap}
               workingHoursRange={workingHoursRangeFromHours(data.profile.working_hours)}
               onIntervalClick={
@@ -192,8 +225,21 @@ export default function PublicProfilePage() {
         interval={bookingInterval}
         mode="public"
         hostName={display_name}
-        defaultTitle={`Meeting with ${display_name}`}
-        allowPhysical
+        defaultTitle={selectedType?.name ?? `Meeting with ${display_name}`}
+        // Only offer the Online/In-person toggle in the generic (no-type)
+        // flow. When a type is selected the kind is baked into it.
+        allowPhysical={selectedType === null}
+        lockedType={
+          selectedType
+            ? {
+                name: selectedType.name,
+                duration_min: selectedType.duration_min,
+                kind: selectedType.kind,
+                location: selectedType.location,
+                description: selectedType.description,
+              }
+            : null
+        }
         submitting={bookingSubmitting}
         errorMessage={bookingError}
         successMessage={bookingSuccess}
@@ -212,6 +258,7 @@ export default function PublicProfilePage() {
               notes: v.notes,
               kind: v.kind,
               location: v.location,
+              typeSlug: selectedType?.slug,
             });
             if ("pending" in result) {
               setBookingSuccess(
@@ -268,5 +315,77 @@ export default function PublicProfilePage() {
         }}
       />
     </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TypeList — landing view when the host has defined meeting types.
+// ---------------------------------------------------------------------------
+
+function TypeList({
+  types,
+  onPick,
+}: {
+  types: PublicMeetingType[];
+  onPick: (slug: string) => void;
+}) {
+  return (
+    <section className="space-y-3">
+      <header>
+        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+          Pick a meeting
+        </h2>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Choose an option — the next step shows when we&apos;re both free.
+        </p>
+      </header>
+      <ul className="space-y-2">
+        {types.map((t) => (
+          <li key={t.slug}>
+            <button
+              type="button"
+              onClick={() => onPick(t.slug)}
+              className="group flex w-full items-start gap-3 rounded-xl border border-zinc-200 bg-white p-4 text-left shadow-sm transition-colors hover:border-indigo-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-indigo-700"
+            >
+              <span
+                className="mt-1 h-3 w-3 shrink-0 rounded-full"
+                style={{ backgroundColor: t.color || "#4f46e5" }}
+                aria-hidden
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-baseline gap-2">
+                  <span className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+                    {t.name}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    {t.kind === "physical" ? (
+                      <MapPin size={12} aria-hidden />
+                    ) : (
+                      <Video size={12} aria-hidden />
+                    )}
+                    {t.duration_min} min
+                  </span>
+                </div>
+                {t.description && (
+                  <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                    {t.description}
+                  </p>
+                )}
+                {t.location && t.kind === "physical" && (
+                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    {t.location}
+                  </p>
+                )}
+              </div>
+              <ArrowRight
+                size={16}
+                aria-hidden
+                className="mt-1 shrink-0 text-zinc-400 transition-transform group-hover:translate-x-0.5 group-hover:text-indigo-600 dark:group-hover:text-indigo-400"
+              />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

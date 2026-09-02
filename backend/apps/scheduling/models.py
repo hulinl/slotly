@@ -53,6 +53,55 @@ class GoogleAccount(models.Model):
         return f"{self.user_id}:{self.google_email}"
 
 
+class MeetingType(models.Model):
+    """Host-defined preset a visitor picks *before* they see any slots.
+
+    Calendly's core UX primitive: instead of "pick any free time for as
+    long as you want", the visitor sees a list of options ("15-min chat",
+    "30-min demo", "60-min deep dive") and each one locks the booking to
+    a specific duration, kind (online/physical), and — for physical — a
+    default location. Optional: hosts who don't define any types keep
+    the generic flow (visitor picks duration in the dialog).
+    """
+
+    class Kind(models.TextChoices):
+        ONLINE = "online", "Online"
+        PHYSICAL = "physical", "In person"
+
+    host = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="meeting_types",
+    )
+    name = models.CharField(max_length=80)
+    slug = models.SlugField(max_length=60)
+    description = models.TextField(blank=True)
+    duration_min = models.PositiveSmallIntegerField(default=30)
+    kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.ONLINE)
+    # Default location for physical meetings — visitor can still override.
+    location = models.CharField(max_length=300, blank=True)
+    # Hex colour used to tint the type card on the public booking page.
+    color = models.CharField(max_length=7, default="#4f46e5")
+    is_active = models.BooleanField(default=True)
+    display_order = models.PositiveSmallIntegerField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("display_order", "id")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("host", "slug"),
+                name="uniq_meeting_type_host_slug",
+            ),
+        ]
+        indexes = [models.Index(fields=("host", "is_active"))]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.duration_min}min)"
+
+
 class Booking(models.Model):
     """Record of a calendar event that Slotly created on behalf of the host.
 
