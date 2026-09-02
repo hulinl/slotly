@@ -70,6 +70,8 @@ class MeSerializer(serializers.ModelSerializer):
             "share_enabled",
             "share_token",
             "avatar_url",
+            "buffer_before_min",
+            "buffer_after_min",
         )
         read_only_fields = ("email", "share_token", "avatar_url")
 

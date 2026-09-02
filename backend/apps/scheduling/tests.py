@@ -817,6 +817,32 @@ class MeetingCreateGroupTests(TestCase):
         self.assertEqual(resp.status_code, 400)
 
 
+class BufferInflationTests(TestCase):
+    """User buffer_before/after minutes pad every busy interval that
+    availability views return. Covers the pure helper — full end-to-end
+    lives in the accounts app's availability views."""
+
+    def test_helper_expands_intervals_symmetrically(self):
+        from datetime import datetime as _dt, timezone as _tz
+        from apps.accounts.views import _inflate_busy
+        s = _dt(2026, 9, 10, 10, 0, tzinfo=_tz.utc)
+        e = _dt(2026, 9, 10, 11, 0, tzinfo=_tz.utc)
+        inflated = _inflate_busy([(s, e)], 15, 30)
+        self.assertEqual(len(inflated), 1)
+        self.assertEqual((inflated[0][0]).minute, 45)  # 15 min earlier
+        # 30 min later → 11:30
+        self.assertEqual((inflated[0][1]).hour, 11)
+        self.assertEqual((inflated[0][1]).minute, 30)
+
+    def test_helper_is_noop_when_buffers_are_zero(self):
+        from datetime import datetime as _dt, timezone as _tz
+        from apps.accounts.views import _inflate_busy
+        s = _dt(2026, 9, 10, 10, 0, tzinfo=_tz.utc)
+        e = _dt(2026, 9, 10, 11, 0, tzinfo=_tz.utc)
+        inflated = _inflate_busy([(s, e)], 0, 0)
+        self.assertEqual(inflated, [(s, e)])
+
+
 class MeetingTypeTests(TestCase):
     """CRUD + slug generation for meeting-type presets."""
 

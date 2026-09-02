@@ -110,6 +110,7 @@ class MyAvailabilityView(APIView):
             ends_at__gt=window_start,
         ).values("starts_at", "ends_at"):
             busy.append((u["starts_at"], u["ends_at"]))
+        busy = _inflate_busy(busy, user.buffer_before_min, user.buffer_after_min)
 
         return Response({
             "profile": PublicProfileSerializer(user, context={"request": request}).data,
@@ -226,6 +227,18 @@ class PeerAvailabilityView(APIView):
             ends_at__gt=window_start,
         ).values("user_id", "starts_at", "ends_at"):
             busy_per_user[u["user_id"]].append((u["starts_at"], u["ends_at"]))
+        # Apply each user's own buffer so back-to-back meetings don't leak
+        # into the intersection either.
+        busy_per_user[request.user.pk] = _inflate_busy(
+            busy_per_user[request.user.pk],
+            request.user.buffer_before_min,
+            request.user.buffer_after_min,
+        )
+        busy_per_user[peer.pk] = _inflate_busy(
+            busy_per_user[peer.pk],
+            peer.buffer_before_min,
+            peer.buffer_after_min,
+        )
 
         slots, truncated = _compute_slots(
             working_hours_per_user=working_hours_per_user,
@@ -337,6 +350,7 @@ class TeammateAvailabilityView(APIView):
             ends_at__gt=window_start,
         ).values("starts_at", "ends_at"):
             busy.append((u["starts_at"], u["ends_at"]))
+        busy = _inflate_busy(busy, peer.buffer_before_min, peer.buffer_after_min)
 
         return Response({
             "profile": PublicProfileSerializer(peer, context={"request": request}).data,
@@ -407,6 +421,7 @@ class PublicProfileView(APIView):
             ends_at__gt=window_start,
         ).values("starts_at", "ends_at"):
             busy.append((u["starts_at"], u["ends_at"]))
+        busy = _inflate_busy(busy, user.buffer_before_min, user.buffer_after_min)
 
         profile = PublicProfileSerializer(user, context={"request": request}).data
         # Active meeting types the visitor can pick from. Empty list means
@@ -435,6 +450,20 @@ class PublicProfileView(APIView):
             "booking_enabled": _has_writable_provider(user),
             "meeting_types": types,
         })
+
+
+def _inflate_busy(pairs, buffer_before_min: int, buffer_after_min: int):
+    """Expand each (start, end) busy tuple by the user's configured buffer.
+    "Before" pads earlier so a new meeting ending too close to the next
+    busy block doesn't fit; "After" pads later so a new meeting starting
+    too close to the previous busy block doesn't fit. Called by every
+    availability view so downstream computation stays buffer-agnostic."""
+    from datetime import timedelta as _td
+    if not buffer_before_min and not buffer_after_min:
+        return list(pairs)
+    before = _td(minutes=buffer_before_min)
+    after = _td(minutes=buffer_after_min)
+    return [(s - before, e + after) for s, e in pairs]
 
 
 def _has_writable_provider(user) -> bool:

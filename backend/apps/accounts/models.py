@@ -73,6 +73,14 @@ class User(AbstractUser):
     share_enabled = models.BooleanField(default=False)
     share_token = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True)
 
+    # Buffer minutes the availability engine adds around every busy block
+    # so back-to-back meetings can't happen. "Before" pads the tail of a
+    # slot ending too close to the next busy block; "After" pads the head
+    # of a slot starting too close to the previous busy block. Zero on
+    # both means no buffer (default) — matches Calendly's default.
+    buffer_before_min = models.PositiveSmallIntegerField(default=0)
+    buffer_after_min = models.PositiveSmallIntegerField(default=0)
+
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS: list[str] = []
 

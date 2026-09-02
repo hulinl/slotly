@@ -29,10 +29,22 @@ export type Me = {
   share_enabled: boolean;
   share_token: string;
   avatar_url: string | null;
+  buffer_before_min: number;
+  buffer_after_min: number;
 };
 
 export type MePatch = Partial<
-  Pick<Me, "first_name" | "last_name" | "phone" | "working_hours" | "country" | "share_enabled">
+  Pick<
+    Me,
+    | "first_name"
+    | "last_name"
+    | "phone"
+    | "working_hours"
+    | "country"
+    | "share_enabled"
+    | "buffer_before_min"
+    | "buffer_after_min"
+  >
 >;
 
 export const SUPPORTED_COUNTRIES: Array<{ code: string; name: string }> = [

@@ -1009,7 +1009,7 @@ def _host_availability_for_reschedule(host) -> dict:
     from apps.availability.models import Unavailability as _Un
     from apps.calendars.models import CalendarEvent as _CE
 
-    from apps.accounts.views import _holidays_in_range
+    from apps.accounts.views import _holidays_in_range, _inflate_busy
 
     now = djtz.now()
     window_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1030,6 +1030,7 @@ def _host_availability_for_reschedule(host) -> dict:
         ends_at__gt=window_start,
     ).values("starts_at", "ends_at"):
         busy.append((u["starts_at"], u["ends_at"]))
+    busy = _inflate_busy(busy, host.buffer_before_min, host.buffer_after_min)
 
     return {
         "working_hours": host.working_hours,
