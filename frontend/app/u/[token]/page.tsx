@@ -34,7 +34,7 @@ export default function PublicProfilePage() {
   const [bookingInterval, setBookingInterval] = useState<{ start: Date; end: Date } | null>(null);
   const [bookingSubmitting, setBookingSubmitting] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
-  const [bookingSuccess, setBookingSuccess] = useState<string | null>(null);
+  const [bookingSuccess, setBookingSuccess] = useState<React.ReactNode | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -213,19 +213,53 @@ export default function PublicProfilePage() {
               kind: v.kind,
               location: v.location,
             });
-            if ("pending" in result && result.pending) {
+            if ("pending" in result) {
               setBookingSuccess(
-                `Request sent. ${display_name} will confirm or decline — you'll get an email either way.`,
+                <span>
+                  Request sent. {display_name} will confirm or decline —
+                  you&apos;ll get an email either way.
+                </span>,
               );
             } else {
-              setBookingSuccess("Booked. Check your inbox for the invite.");
+              // Confirmed online booking — surface the Meet/Teams join link
+              // and the manage link inline so the visitor doesn't have to
+              // dig through the calendar invite email just to save them.
+              const meetLink = result.event.meet_link;
+              const manageUrl = result.manage_url;
+              setBookingSuccess(
+                <div className="space-y-2">
+                  <p className="font-medium">Booked! Invite is on its way to your inbox.</p>
+                  <div className="flex flex-wrap gap-2">
+                    {meetLink && (
+                      <a
+                        href={meetLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+                      >
+                        Join meeting
+                      </a>
+                    )}
+                    {manageUrl && (
+                      <a
+                        href={manageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-700 dark:text-emerald-200 dark:hover:bg-emerald-900/40"
+                      >
+                        Manage booking
+                      </a>
+                    )}
+                  </div>
+                </div>,
+              );
             }
+            // Longer delay so the visitor has time to click Join/Manage.
             setTimeout(() => {
               setBookingInterval(null);
               setBookingSuccess(null);
-              // Re-fetch so the just-booked window shows up as busy.
               getPublicProfile(token).then(setData).catch(() => {});
-            }, 2200);
+            }, 6000);
           } catch (err) {
             setBookingError(err instanceof Error ? err.message : "Couldn't create meeting");
           } finally {

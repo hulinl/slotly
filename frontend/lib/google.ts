@@ -162,7 +162,7 @@ export async function createMeetingWithPeer(input: {
 }
 
 export type PublicBookingResult =
-  | CreatedMeeting
+  | (CreatedMeeting & { manage_url?: string })
   | { ok: true; pending: true; request_id: number };
 
 /** Public share booking — /u/[token] SlotsCalendar → this. No auth. When
@@ -208,6 +208,7 @@ export async function createPublicMeeting(input: {
     pending?: boolean;
     request_id?: number;
     event?: CreatedMeeting["event"];
+    manage_url?: string;
   };
   if (!res.ok || !body.ok) {
     throw new Error(body.detail ?? `HTTP ${res.status}`);
@@ -216,7 +217,7 @@ export async function createPublicMeeting(input: {
     return { ok: true, pending: true, request_id: body.request_id };
   }
   if (body.event) {
-    return { ok: true, event: body.event };
+    return { ok: true, event: body.event, manage_url: body.manage_url };
   }
   throw new Error("Unexpected response shape");
 }
