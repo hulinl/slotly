@@ -929,6 +929,9 @@ class PublicMeetingCreateView(APIView):
                 "provider": provider.name,
             },
             "manage_url": _manage_url(booking),
+            # Empty string when the picked meeting type has no redirect
+            # configured; frontend falls back to the inline success block.
+            "redirect_url": (meeting_type.redirect_url if meeting_type else ""),
         }, status=201)
 
 
@@ -1294,6 +1297,7 @@ def _serialize_meeting_type(t: MeetingType) -> dict:
         "is_active": t.is_active,
         "display_order": t.display_order,
         "questions": list(t.questions or []),
+        "redirect_url": t.redirect_url,
     }
 
 
@@ -1387,6 +1391,12 @@ def _validate_meeting_type_payload(
         except (TypeError, ValueError):
             return {}, {"display_order": "Must be an integer."}
 
+    if "redirect_url" in body:
+        url = str(_get("redirect_url") or "").strip()[:2000]
+        if url and not (url.startswith("https://") or url.startswith("http://")):
+            return {}, {"redirect_url": "Must start with http:// or https://."}
+        cleaned["redirect_url"] = url
+
     if "questions" in body:
         raw_questions = _get("questions") or []
         if not isinstance(raw_questions, list):
@@ -1436,6 +1446,112 @@ def _validate_meeting_type_payload(
         return {}, {"name": "Required on create."}
 
     return cleaned, None
+
+
+class HostBookingsIcsExportView(APIView):
+    """GET /api/host-bookings/export.ics[?status=upcoming|past|all]
+
+    Streams the host's bookings as a valid iCalendar (RFC 5545) feed —
+    handy for backup, importing into another calendar tool, or attaching
+    to invoices. Each Booking becomes one VEVENT with the visitor as an
+    ATTENDEE. Cancelled bookings emit STATUS:CANCELLED.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Any:
+        from django.http import HttpResponse
+
+        status_filter = request.query_params.get("status", "upcoming")
+        qs = Booking.objects.filter(host=request.user).order_by("start_at")
+        now = djtz.now()
+        if status_filter == "upcoming":
+            qs = qs.filter(end_at__gte=now)
+        elif status_filter == "past":
+            qs = qs.filter(end_at__lt=now)
+        # "all" → no extra filter
+
+        body = _render_ics(list(qs[:1000]), request.user)
+        resp = HttpResponse(body, content_type="text/calendar; charset=utf-8")
+        resp["Content-Disposition"] = (
+            f'attachment; filename="slotly-bookings-{status_filter}.ics"'
+        )
+        return resp
+
+
+def _render_ics(bookings: list, host) -> str:
+    """Hand-craft a minimal-but-compliant iCalendar feed. Avoided the
+    `ics` / `icalendar` deps — one VCALENDAR + N VEVENTs is straightforward
+    and keeps our wheel diet small. RFC 5545 folding is not applied (most
+    consumers tolerate long lines; we cap description at 400 chars anyway).
+    """
+    from html import escape as _escape  # noqa: F401 — reserved for future needs
+
+    from datetime import timezone as _dt_tz
+
+    def _fmt_dt(dt) -> str:
+        # UTC form: 20260910T100000Z
+        return dt.astimezone(_dt_tz.utc).strftime("%Y%m%dT%H%M%SZ")
+
+    def _esc(v: str) -> str:
+        # RFC 5545 escaping: commas, semicolons, backslashes, newlines.
+        return (
+            v.replace("\\", "\\\\")
+            .replace(",", "\\,")
+            .replace(";", "\\;")
+            .replace("\n", "\\n")
+            .replace("\r", "")
+        )
+
+    host_email = host.email
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Slotly//Bookings Export//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+    ]
+    stamp = _fmt_dt(djtz.now())
+    for b in bookings:
+        title = (b.title or "Slotly booking").strip()
+        summary = _esc(title)
+        # Include visitor name and location context in the description.
+        desc_parts = []
+        if b.visitor_name or b.visitor_email:
+            who = f"{b.visitor_name or ''} <{b.visitor_email or ''}>".strip()
+            desc_parts.append(f"With: {who}")
+        if b.location:
+            desc_parts.append(f"Where: {b.location}")
+        if b.attendee_emails and len(b.attendee_emails) > 1:
+            desc_parts.append(f"Attendees: {', '.join(b.attendee_emails)}")
+        description = _esc("\n".join(desc_parts))[:400]
+
+        lines.extend([
+            "BEGIN:VEVENT",
+            f"UID:slotly-{b.uuid}@slotly.team",
+            f"DTSTAMP:{stamp}",
+            f"DTSTART:{_fmt_dt(b.start_at)}",
+            f"DTEND:{_fmt_dt(b.end_at)}",
+            f"SUMMARY:{summary}",
+            f"DESCRIPTION:{description}",
+            f"ORGANIZER;CN={_esc(host.first_name or host_email)}:mailto:{host_email}",
+        ])
+        if b.location:
+            lines.append(f"LOCATION:{_esc(b.location)}")
+        if b.status == Booking.Status.CANCELLED:
+            lines.append("STATUS:CANCELLED")
+        else:
+            lines.append("STATUS:CONFIRMED")
+        for email in (b.attendee_emails or [b.visitor_email]):
+            if email:
+                lines.append(
+                    f"ATTENDEE;CN={_esc(email)};RSVP=TRUE:mailto:{email}"
+                )
+        lines.append("END:VEVENT")
+
+    lines.append("END:VCALENDAR")
+    # iCalendar convention is CRLF-terminated lines.
+    return "\r\n".join(lines) + "\r\n"
 
 
 class HostBookingCancelView(APIView):

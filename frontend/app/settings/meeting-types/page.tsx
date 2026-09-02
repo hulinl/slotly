@@ -224,6 +224,7 @@ function EditorModal({
   const [location, setLocation] = useState(initial?.location ?? "");
   const [color, setColor] = useState(initial?.color ?? PRESET_COLORS[0]);
   const [questions, setQuestions] = useState<MeetingTypeQuestion[]>(initial?.questions ?? []);
+  const [redirectUrl, setRedirectUrl] = useState(initial?.redirect_url ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -260,6 +261,7 @@ function EditorModal({
         questions: questions
           .map((q) => ({ ...q, label: q.label.trim() }))
           .filter((q) => q.label.length > 0),
+        redirect_url: redirectUrl.trim(),
       };
       const saved = isNew
         ? await createMeetingType(payload)
@@ -388,6 +390,23 @@ function EditorModal({
               />
             ))}
           </div>
+        </div>
+
+        <div className="space-y-1">
+          <Label htmlFor="mt-redirect">Redirect after booking (optional)</Label>
+          <Input
+            id="mt-redirect"
+            type="url"
+            value={redirectUrl}
+            onChange={(e) => setRedirectUrl(e.target.value)}
+            placeholder="https://yourdomain.com/thanks"
+            maxLength={2000}
+          />
+          <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+            When set, the visitor is sent here after booking instead of
+            seeing the built-in confirmation — useful for a &quot;thank
+            you&quot; page or a conversion pixel.
+          </p>
         </div>
 
         {/* Custom questions the visitor must fill in when they pick this

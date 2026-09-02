@@ -6,6 +6,7 @@ from .views import (
     GoogleAccountStatusView,
     HostBookingCancelView,
     HostBookingListView,
+    HostBookingsIcsExportView,
     MeetingCreateView,
     MeetingTypeDetailView,
     MeetingTypeListView,
@@ -64,6 +65,11 @@ urlpatterns = [
     ),
     path("booking-requests", BookingRequestListView.as_view(), name="booking-requests-list"),
     path("host-bookings", HostBookingListView.as_view(), name="host-bookings-list"),
+    path(
+        "host-bookings/export.ics",
+        HostBookingsIcsExportView.as_view(),
+        name="host-bookings-export-ics",
+    ),
     path(
         "host-bookings/<uuid:uuid_>/cancel",
         HostBookingCancelView.as_view(),

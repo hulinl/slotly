@@ -304,6 +304,12 @@ class PublicMeetingOnlineTests(TestCase):
     params through correctly and returns 201 with an event payload."""
 
     def setUp(self):
+        # PublicMeetingCreateView has a per-token + per-IP minute-window
+        # rate limit backed by Django's cache. LocMemCache persists across
+        # tests in the same process, so as more test methods land they
+        # eventually hit 429. Clear on each setUp.
+        from django.core.cache import cache as _cache
+        _cache.clear()
         UserModel = get_user_model()
         self.host = UserModel.objects.create_user(email="host@test.local", password="pwpw12345xyz")
         self.host.share_enabled = True
@@ -388,6 +394,8 @@ class PublicMeetingPhysicalTests(TestCase):
     should never touch the calendar API on submission."""
 
     def setUp(self):
+        from django.core.cache import cache as _cache
+        _cache.clear()
         UserModel = get_user_model()
         self.host = UserModel.objects.create_user(email="host@test.local", password="pwpw12345xyz")
         self.host.share_enabled = True
@@ -911,6 +919,8 @@ class MeetingTypeQuestionsTests(TestCase):
     custom_answers against the type's question schema."""
 
     def setUp(self):
+        from django.core.cache import cache as _cache
+        _cache.clear()
         UserModel = get_user_model()
         self.host = UserModel.objects.create_user(email="host@test.local", password="pwpw12345xyz")
         self.host.share_enabled = True
@@ -1028,6 +1038,8 @@ class PublicMeetingWithTypeTests(TestCase):
     baked into the type overrule anything the visitor's client sends."""
 
     def setUp(self):
+        from django.core.cache import cache as _cache
+        _cache.clear()
         UserModel = get_user_model()
         self.host = UserModel.objects.create_user(email="host@test.local", password="pwpw12345xyz")
         self.host.share_enabled = True
@@ -1172,6 +1184,64 @@ class PublicBookingRescheduleTests(TestCase):
         self.assertEqual(resp.status_code, 400)
 
 
+class HostBookingsIcsExportTests(TestCase):
+    """GET /api/host-bookings/export.ics returns a valid iCalendar feed
+    scoped to the calling host, with one VEVENT per Booking row."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.host = UserModel.objects.create_user(
+            email="host@test.local", password="pwpw12345xyz",
+            first_name="Han", last_name="Solo",
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.host)
+        # One upcoming, one cancelled — verify both render.
+        self.upcoming = Booking.objects.create(
+            host=self.host, provider=Booking.Provider.GOOGLE,
+            calendar_id="primary", event_id="evt-1",
+            visitor_name="Leia", visitor_email="leia@example.com",
+            attendee_emails=["leia@example.com"],
+            title="Chat", start_at=djtz.now() + timedelta(hours=48),
+            end_at=djtz.now() + timedelta(hours=48, minutes=30),
+        )
+        self.cancelled = Booking.objects.create(
+            host=self.host, provider=Booking.Provider.GOOGLE,
+            calendar_id="primary", event_id="evt-2",
+            visitor_email="chewie@example.com",
+            attendee_emails=["chewie@example.com"],
+            start_at=djtz.now() + timedelta(hours=24),
+            end_at=djtz.now() + timedelta(hours=24, minutes=30),
+            status=Booking.Status.CANCELLED,
+        )
+
+    def test_export_returns_valid_ics(self):
+        resp = self.client.get(reverse("host-bookings-export-ics") + "?status=all")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "text/calendar; charset=utf-8")
+        body = resp.content.decode()
+        self.assertTrue(body.startswith("BEGIN:VCALENDAR"))
+        self.assertTrue(body.rstrip().endswith("END:VCALENDAR"))
+        # One VEVENT per booking; RFC-required fields present.
+        self.assertEqual(body.count("BEGIN:VEVENT"), 2)
+        self.assertEqual(body.count("END:VEVENT"), 2)
+        self.assertIn("SUMMARY:Chat", body)
+        self.assertIn("STATUS:CANCELLED", body)
+        self.assertIn("STATUS:CONFIRMED", body)
+        self.assertIn("ATTENDEE", body)
+        self.assertIn(f"UID:slotly-{self.upcoming.uuid}@slotly.team", body)
+
+    def test_export_only_returns_callers_own(self):
+        UserModel = get_user_model()
+        other = UserModel.objects.create_user(email="other@test.local", password="pwpw12345xyz")
+        self.client.force_authenticate(other)
+        resp = self.client.get(reverse("host-bookings-export-ics") + "?status=all")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode()
+        # No VEVENTs for someone else's host.
+        self.assertEqual(body.count("BEGIN:VEVENT"), 0)
+
+
 class HostCancelTests(TestCase):
     """Host-side cancel from /bookings Confirmed tab."""
 
@@ -1295,18 +1365,21 @@ class SendBookingRemindersCommandTests(TestCase):
     def test_command_reminds_due_bookings_only(self):
         from django.core.management import call_command
         from django.core import mail as _mail
-        call_command("send_booking_reminders")
+        # already-reminded row for THIS stage stays reminded — mark 24h
+        # in reminded_stages so the new stage-aware filter skips it.
+        self.already.reminded_stages = ["24h"]
+        self.already.save(update_fields=["reminded_stages"])
+        call_command("send_booking_reminders", "--stage", "24h")
         recipients = {addr for m in _mail.outbox for addr in m.to}
         self.assertEqual(recipients, {"leia@example.com"})
         self.due.refresh_from_db()
+        self.assertIn("24h", self.due.reminded_stages)
         self.assertIsNotNone(self.due.reminded_at)
-        # Others untouched
         self.already.refresh_from_db()
         self.far.refresh_from_db()
         self.cxl.refresh_from_db()
-        # Already stayed already; far still null; cancelled still null.
-        self.assertIsNone(self.far.reminded_at)
-        self.assertIsNone(self.cxl.reminded_at)
+        self.assertEqual(self.far.reminded_stages, [])
+        self.assertEqual(self.cxl.reminded_stages, [])
 
     def test_dry_run_sends_no_mail_and_no_db_writes(self):
         from django.core.management import call_command
@@ -1314,7 +1387,41 @@ class SendBookingRemindersCommandTests(TestCase):
         call_command("send_booking_reminders", "--dry-run")
         self.assertEqual(len(_mail.outbox), 0)
         self.due.refresh_from_db()
-        self.assertIsNone(self.due.reminded_at)
+        self.assertEqual(self.due.reminded_stages, [])
+
+    def test_stages_are_independent(self):
+        """A booking gets both 24h and 1h reminders when the schedules
+        catch them on the respective windows."""
+        from django.core.management import call_command
+        from django.core import mail as _mail
+
+        # Booking at now + 1h → outside 24h window, inside 1h window.
+        soon = Booking.objects.create(
+            host=self.host,
+            provider=Booking.Provider.GOOGLE,
+            calendar_id="primary",
+            event_id="evt-soon",
+            visitor_email="soon@example.com",
+            start_at=djtz.now() + timedelta(hours=1),
+            end_at=djtz.now() + timedelta(hours=1, minutes=30),
+        )
+        call_command("send_booking_reminders", "--stage", "1h")
+        recipients = {addr for m in _mail.outbox for addr in m.to}
+        self.assertIn("soon@example.com", recipients)
+        soon.refresh_from_db()
+        self.assertIn("1h", soon.reminded_stages)
+        # Now flip forward: pretend it's 23 hours later — the same booking
+        # (started ago!) shouldn't get a 24h mail because it's past.
+        # Just verify calling 24h a second time doesn't re-send the 1h row
+        # (window mismatch, not filter).
+        _mail.outbox.clear()
+        call_command("send_booking_reminders", "--stage", "24h")
+        self.assertNotIn("soon@example.com", {addr for m in _mail.outbox for addr in m.to})
+
+    def test_unknown_stage_errors(self):
+        from django.core.management import call_command
+        with self.assertRaises(Exception):
+            call_command("send_booking_reminders", "--stage", "42h")
 
 
 class ProviderPickerTests(TestCase):

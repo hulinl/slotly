@@ -1,19 +1,23 @@
 """
-Mail visitors a T-24h reminder for their confirmed Slotly booking.
+Mail visitors a reminder for their confirmed Slotly booking.
 
-Runs from a Container Apps Job on a cron (e.g. every 30 min). Each pass
-finds Booking rows whose ``start_at`` falls in the [now+23h, now+25h]
-window and that we haven't reminded yet (``reminded_at`` is NULL), mails
-the visitor, and stamps ``reminded_at`` so subsequent runs skip them.
+Runs from a Container Apps Job on a cron. Each pass targets one
+*stage* (default "24h") and only touches bookings that (a) fall in
+the stage's window ahead of now and (b) haven't had that stage
+delivered yet (``reminded_stages`` list authoritative).
 
-Idempotent + safe on overlap: two concurrent invocations racing on the
-same row will both mail (rare) but the second's ``reminded_at`` write
-just overwrites the first's — no error, no duplicate stamp.
+Typical prod schedule:
+    slotly-booking-reminders-24h  → --stage 24h  every 30 min
+    slotly-booking-reminders-1h   → --stage 1h   every 10 min
+
+Same booking can receive several stages back-to-back; each stage
+uses its own copy so a "meeting in 1 hour" mail doesn't read like
+"meeting tomorrow".
 
 Usage:
-    python manage.py send_booking_reminders
+    python manage.py send_booking_reminders                 # 24h default
+    python manage.py send_booking_reminders --stage 1h
     python manage.py send_booking_reminders --dry-run
-    python manage.py send_booking_reminders --window-hours 24 --slack-hours 1
 """
 
 from __future__ import annotations
@@ -22,7 +26,7 @@ import logging
 from datetime import timedelta
 
 from django.core.mail import EmailMultiAlternatives
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from apps.notifications.emails import html_shell, kv_rows, paragraph
@@ -31,22 +35,33 @@ from apps.scheduling.models import Booking
 logger = logging.getLogger(__name__)
 
 
+# Stage → (offset before start_at, cadence slack, subject template, intro copy).
+# Slack is the half-width of the "due now" window: cron cadence must be
+# ≤ 2 × slack so no booking slips between runs.
+STAGES = {
+    "24h": {
+        "hours_before": 24,
+        "slack_hours": 1.0,        # cron every 30 min
+        "subject_verb": "Tomorrow",
+        "intro": "Just a friendly reminder — your meeting is tomorrow.",
+    },
+    "1h": {
+        "hours_before": 1,
+        "slack_hours": 0.5,        # cron every 10 min
+        "subject_verb": "In 1 hour",
+        "intro": "Heads up — your meeting starts in about an hour.",
+    },
+}
+
+
 class Command(BaseCommand):
-    help = "Send T-24h reminder emails for confirmed public Slotly bookings."
+    help = "Mail visitors a reminder for confirmed public Slotly bookings."
 
     def add_arguments(self, parser):
         parser.add_argument(
-            "--window-hours",
-            type=float,
-            default=24,
-            help="Send reminder this many hours before start_at (default 24).",
-        )
-        parser.add_argument(
-            "--slack-hours",
-            type=float,
-            default=1,
-            help="Window half-width. Job that runs every 30 min needs "
-                 "slack ≥ 0.5h so late runs still catch the bucket. Default 1.",
+            "--stage",
+            default="24h",
+            help=f"Which stage to send. One of: {', '.join(STAGES)}. Default 24h.",
         )
         parser.add_argument(
             "--dry-run",
@@ -54,46 +69,61 @@ class Command(BaseCommand):
             help="Log what would be sent without touching mail or the DB.",
         )
 
-    def handle(self, *args, window_hours: float, slack_hours: float, dry_run: bool, **_):
+    def handle(self, *args, stage: str, dry_run: bool, **_):
         from django.conf import settings as _settings
 
+        if stage not in STAGES:
+            raise CommandError(
+                f"Unknown stage {stage!r}. Available: {', '.join(STAGES)}",
+            )
+        cfg = STAGES[stage]
+
         now = timezone.now()
-        window_center = now + timedelta(hours=window_hours)
-        window_start = window_center - timedelta(hours=slack_hours)
-        window_end = window_center + timedelta(hours=slack_hours)
+        window_center = now + timedelta(hours=cfg["hours_before"])
+        window_start = window_center - timedelta(hours=cfg["slack_hours"])
+        window_end = window_center + timedelta(hours=cfg["slack_hours"])
 
         qs = Booking.objects.filter(
             status=Booking.Status.CONFIRMED,
-            reminded_at__isnull=True,
             start_at__gte=window_start,
             start_at__lte=window_end,
         ).select_related("host")
 
-        rows = list(qs)
+        # Filter out rows that already have this stage mailed. Doing the
+        # containment check in Python keeps the query DB-agnostic (JSONB
+        # __contains would work on postgres but not on sqlite tests).
+        rows = [b for b in qs if stage not in (b.reminded_stages or [])]
         self.stdout.write(
-            f"Reminder window {window_start.isoformat()} → {window_end.isoformat()}: "
-            f"{len(rows)} booking(s) to remind"
+            f"Stage {stage}: window {window_start.isoformat()} → "
+            f"{window_end.isoformat()}: {len(rows)} booking(s) to remind"
         )
 
         sent = 0
         for b in rows:
             try:
-                self._send(b, dry_run=dry_run, frontend_base=_settings.FRONTEND_BASE_URL)
+                self._send(b, stage=stage, cfg=cfg, dry_run=dry_run,
+                           frontend_base=_settings.FRONTEND_BASE_URL)
                 if not dry_run:
-                    Booking.objects.filter(pk=b.pk).update(reminded_at=timezone.now())
+                    stages = list(b.reminded_stages or [])
+                    if stage not in stages:
+                        stages.append(stage)
+                    Booking.objects.filter(pk=b.pk).update(
+                        reminded_at=timezone.now(),
+                        reminded_stages=stages,
+                    )
                 sent += 1
-            except Exception as exc:  # noqa: BLE001 — one bad row shouldn't kill the whole run
-                logger.warning("reminder failed for booking %s: %s", b.uuid, exc)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("reminder [%s] failed for booking %s: %s", stage, b.uuid, exc)
                 self.stdout.write(self.style.WARNING(f"  {b.uuid}: FAILED — {exc}"))
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Reminded {sent}/{len(rows)} bookings"
+                f"Sent {sent}/{len(rows)} '{stage}' reminders"
                 + (" (dry-run — no emails, no DB writes)" if dry_run else "")
             )
         )
 
-    def _send(self, b: Booking, *, dry_run: bool, frontend_base: str) -> None:
+    def _send(self, b: Booking, *, stage: str, cfg: dict, dry_run: bool, frontend_base: str) -> None:
         from django.conf import settings as _settings
 
         if not b.visitor_email:
@@ -103,23 +133,24 @@ class Command(BaseCommand):
         host_name = f"{b.host.first_name} {b.host.last_name}".strip() or b.host.email
         when = b.start_at.strftime("%A %d %B, %H:%M")
 
-        subject = f"Reminder: your meeting with {host_name} tomorrow at {b.start_at.strftime('%H:%M')}"
+        subject = (
+            f"{cfg['subject_verb']}: your meeting with {host_name} "
+            f"at {b.start_at.strftime('%H:%M')}"
+        )
         text_body = (
             f"Hi {b.visitor_name or 'there'},\n\n"
-            f"This is a quick reminder that you have a meeting with {host_name} "
-            f"{when}."
+            f"{cfg['intro']} You're meeting {host_name} {when}."
         )
         if b.location:
             text_body += f"\n\nWhere: {b.location}"
         text_body += f"\n\nNeed to cancel? {frontend_base.rstrip('/')}/b/{b.uuid}"
 
         html_body = html_shell(
-            title=f"See you tomorrow, {b.visitor_name or 'there'}",
+            title=(
+                f"Meeting with {host_name} — {cfg['subject_verb'].lower()}"
+            ),
             intro_html=(
-                paragraph(
-                    f"Just a friendly reminder — you have a meeting with "
-                    f"{host_name} coming up."
-                )
+                paragraph(cfg["intro"])
                 + kv_rows([
                     ("When", when),
                     ("Where" if b.location else "", b.location),
@@ -134,7 +165,7 @@ class Command(BaseCommand):
             cta_url=f"{frontend_base.rstrip('/')}/b/{b.uuid}",
         )
 
-        self.stdout.write(f"  {b.uuid}: → {b.visitor_email} ({when})")
+        self.stdout.write(f"  {b.uuid}: → {b.visitor_email} ({when}) [stage={stage}]")
         if dry_run:
             return
 

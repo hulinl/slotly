@@ -72,11 +72,36 @@ workspace as the backend — grep for `send_booking_reminders`.
 
 ## Tuning
 
-- `--window-hours 24` — how far ahead of `start_at` we remind. Change to
-  6 for a "same day" reminder, 168 for a week-out.
-- `--slack-hours 1` — half-width of the target window. Job cadence must
-  be ≤ 2 × slack (otherwise you miss some rows between runs).
-- Add another job (e.g. `slotly-booking-reminders-1h`) if you want both
-  a 24h and 1h reminder. `reminded_at` covers only "one has been sent"
-  right now; if you want two-stage reminders, replace it with a
-  `reminded_kinds` JSONField later.
+The command now takes a stage. Two are defined:
+
+- `--stage 24h` (default) — mail 24h ± 1h before start. Cadence: every 30 min.
+- `--stage 1h` — mail 1h ± 30 min before start. Cadence: every 10 min.
+
+`Booking.reminded_stages` (JSON list) is authoritative — the command
+only sends a stage that isn't already in the list, so overlapping runs
+never double-mail the same visitor.
+
+## Two-stage schedule
+
+To send both a day-ahead and a same-hour reminder, run two jobs:
+
+```bash
+# 24h job — as documented above but with --args updated
+az containerapp job create \
+  --name slotly-booking-reminders-24h \
+  ...
+  --cron-expression "*/30 * * * *" \
+  --args "manage.py send_booking_reminders --stage 24h"
+
+# 1h job — same image, faster cadence, shorter timeout is fine
+az containerapp job create \
+  --name slotly-booking-reminders-1h \
+  ...
+  --cron-expression "*/10 * * * *" \
+  --replica-timeout 60 \
+  --args "manage.py send_booking_reminders --stage 1h"
+```
+
+Both jobs share the same image and env; only the cron + `--stage`
+differ. Copy-paste the resource in `infra/main.bicep` twice with
+those two overrides to persist across infra redeploys.

@@ -13,7 +13,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { CalendarClock, Check, MapPin, Video, X as XIcon } from "lucide-react";
+import { CalendarClock, Check, Download, MapPin, Video, X as XIcon } from "lucide-react";
 import { AuthedHeader } from "@/components/AuthedHeader";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormError } from "@/components/ui";
@@ -432,6 +432,18 @@ function ConfirmedPanel({
       </div>
 
       {error && <FormError message={error} />}
+
+      <div className="flex justify-between">
+        <div className="flex-1" />
+        <a
+          href={`/api/host-bookings/export.ics?status=${filter}`}
+          className="inline-flex items-center gap-1.5 text-xs text-zinc-600 underline decoration-dotted hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+          title="Download these bookings as an iCalendar (.ics) file"
+        >
+          <Download size={12} aria-hidden />
+          Export .ics
+        </a>
+      </div>
 
       {(rows ?? []).length === 0 ? (
         <div className="rounded-xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">

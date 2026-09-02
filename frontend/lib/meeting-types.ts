@@ -23,6 +23,7 @@ export type MeetingType = {
   is_active: boolean;
   display_order: number;
   questions: MeetingTypeQuestion[];
+  redirect_url: string;
 };
 
 /** Trimmed shape the public profile endpoint returns — no id/is_active
@@ -36,6 +37,7 @@ export type PublicMeetingType = {
   location: string;
   color: string;
   questions: MeetingTypeQuestion[];
+  redirect_url: string;
 };
 
 function csrfHeader(): Record<string, string> {
@@ -61,6 +63,7 @@ export type MeetingTypeInput = {
   is_active?: boolean;
   display_order?: number;
   questions?: MeetingTypeQuestion[];
+  redirect_url?: string;
 };
 
 export async function createMeetingType(input: MeetingTypeInput): Promise<MeetingType> {

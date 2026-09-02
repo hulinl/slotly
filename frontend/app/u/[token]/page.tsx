@@ -262,6 +262,13 @@ function PublicProfilePageInner() {
               typeSlug: selectedType?.slug,
               customAnswers: v.customAnswers,
             });
+            // Meeting type may configure a post-booking redirect URL —
+            // typically the host's own "thank you" page for conversion
+            // tracking. Bounce there instead of showing inline success.
+            if ("event" in result && result.redirect_url) {
+              window.location.href = result.redirect_url;
+              return;
+            }
             if ("pending" in result) {
               setBookingSuccess(
                 <span>

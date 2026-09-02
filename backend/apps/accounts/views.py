@@ -433,7 +433,7 @@ class PublicProfileView(APIView):
             .order_by("display_order", "id")
             .values(
                 "slug", "name", "description", "duration_min",
-                "kind", "location", "color", "questions",
+                "kind", "location", "color", "questions", "redirect_url",
             )
         )
         return Response({

@@ -92,6 +92,11 @@ class MeetingType(models.Model):
     # and survive question renames or reorders.
     questions = models.JSONField(default=list, blank=True)
 
+    # Optional URL to send the visitor to after a successful booking —
+    # typically a "thank you" page on the host's own site (Calendly-style
+    # conversion tracking). Empty = show the inline success block instead.
+    redirect_url = models.URLField(max_length=2000, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -165,10 +170,13 @@ class Booking(models.Model):
     cancellation_reason = models.TextField(blank=True)
     cancelled_by_visitor = models.BooleanField(default=False)
 
-    # Populated by the send_booking_reminders command once the visitor has
-    # been mailed their T-24h reminder. Null means "not sent yet"; the
-    # command's window logic skips already-reminded rows.
+    # Timestamp of the most-recent reminder mail sent (observability only).
+    # Which stages have been sent is authoritative in ``reminded_stages``.
     reminded_at = models.DateTimeField(null=True, blank=True)
+    # Reminder stages already mailed for this booking (e.g. ["24h"] or
+    # ["24h", "1h"]). The management command runs once per stage on its
+    # own cron cadence and skips rows whose stage is already in the list.
+    reminded_stages = models.JSONField(default=list, blank=True)
 
     # Answers the visitor gave to the MeetingType's custom questions,
     # keyed by question id → answer string. Empty for bookings without
