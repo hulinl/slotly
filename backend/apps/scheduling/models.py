@@ -105,6 +105,11 @@ class Booking(models.Model):
     cancellation_reason = models.TextField(blank=True)
     cancelled_by_visitor = models.BooleanField(default=False)
 
+    # Populated by the send_booking_reminders command once the visitor has
+    # been mailed their T-24h reminder. Null means "not sent yet"; the
+    # command's window logic skips already-reminded rows.
+    reminded_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

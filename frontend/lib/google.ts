@@ -253,6 +253,32 @@ export async function listBookingRequests(
   return body.requests;
 }
 
+export type HostBooking = {
+  uuid: string;
+  kind: "online" | "physical";
+  status: "confirmed" | "cancelled";
+  start: string;
+  end: string;
+  title: string;
+  location: string;
+  visitor_name: string;
+  visitor_email: string;
+  cancelled_at: string | null;
+  cancelled_by_visitor: boolean;
+  created_at: string;
+};
+
+export async function listHostBookings(
+  status: "upcoming" | "past" | "cancelled" | "all" = "upcoming",
+): Promise<HostBooking[]> {
+  const res = await fetch(`/api/host-bookings?status=${status}`, {
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const body = (await res.json()) as { bookings: HostBooking[] };
+  return body.bookings;
+}
+
 // ---------------------------------------------------------------------------
 // Visitor-side booking management — /b/<uuid>
 // ---------------------------------------------------------------------------

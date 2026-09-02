@@ -792,6 +792,89 @@ class MeetingCreateGroupTests(TestCase):
         self.assertEqual(resp.status_code, 400)
 
 
+class SendBookingRemindersCommandTests(TestCase):
+    """`python manage.py send_booking_reminders` — cron entrypoint for the
+    T-24h visitor reminder. Verifies (a) rows in the window get mailed and
+    stamped, (b) already-reminded rows are skipped, (c) cancelled bookings
+    are skipped, (d) dry-run touches neither mail nor DB."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.host = UserModel.objects.create_user(
+            email="host@test.local", password="pwpw12345xyz",
+            first_name="Han", last_name="Solo",
+        )
+        # 24h from now → inside default window
+        self.due = Booking.objects.create(
+            host=self.host,
+            provider=Booking.Provider.GOOGLE,
+            calendar_id="primary",
+            event_id="evt-due",
+            visitor_name="Leia",
+            visitor_email="leia@example.com",
+            kind=Booking.Kind.ONLINE,
+            title="Diplomacy",
+            start_at=djtz.now() + timedelta(hours=24),
+            end_at=djtz.now() + timedelta(hours=24, minutes=30),
+        )
+        # 5 days from now → outside window
+        self.far = Booking.objects.create(
+            host=self.host,
+            provider=Booking.Provider.GOOGLE,
+            calendar_id="primary",
+            event_id="evt-far",
+            visitor_email="chewie@example.com",
+            start_at=djtz.now() + timedelta(days=5),
+            end_at=djtz.now() + timedelta(days=5, hours=1),
+        )
+        # 24h but already reminded
+        self.already = Booking.objects.create(
+            host=self.host,
+            provider=Booking.Provider.GOOGLE,
+            calendar_id="primary",
+            event_id="evt-already",
+            visitor_email="lando@example.com",
+            start_at=djtz.now() + timedelta(hours=24),
+            end_at=djtz.now() + timedelta(hours=24, minutes=30),
+            reminded_at=djtz.now(),
+        )
+        # 24h but cancelled — should not remind
+        self.cxl = Booking.objects.create(
+            host=self.host,
+            provider=Booking.Provider.GOOGLE,
+            calendar_id="primary",
+            event_id="evt-cxl",
+            visitor_email="wedge@example.com",
+            start_at=djtz.now() + timedelta(hours=24),
+            end_at=djtz.now() + timedelta(hours=24, minutes=30),
+            status=Booking.Status.CANCELLED,
+        )
+
+    def test_command_reminds_due_bookings_only(self):
+        from django.core.management import call_command
+        from django.core import mail as _mail
+        call_command("send_booking_reminders")
+        recipients = {addr for m in _mail.outbox for addr in m.to}
+        self.assertEqual(recipients, {"leia@example.com"})
+        self.due.refresh_from_db()
+        self.assertIsNotNone(self.due.reminded_at)
+        # Others untouched
+        self.already.refresh_from_db()
+        self.far.refresh_from_db()
+        self.cxl.refresh_from_db()
+        # Already stayed already; far still null; cancelled still null.
+        self.assertIsNone(self.far.reminded_at)
+        self.assertIsNone(self.cxl.reminded_at)
+
+    def test_dry_run_sends_no_mail_and_no_db_writes(self):
+        from django.core.management import call_command
+        from django.core import mail as _mail
+        call_command("send_booking_reminders", "--dry-run")
+        self.assertEqual(len(_mail.outbox), 0)
+        self.due.refresh_from_db()
+        self.assertIsNone(self.due.reminded_at)
+
+
 class ProviderPickerTests(TestCase):
     """_pick_write_provider picks Google when both are connected, MS as
     fallback, None when neither. Direct unit test — cheap to run and covers

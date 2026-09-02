@@ -969,6 +969,48 @@ def _notify_booking_cancelled(booking: Booking) -> None:
 # ---------------------------------------------------------------------------
 
 
+class HostBookingListView(APIView):
+    """GET /api/host-bookings[?status=upcoming|past|cancelled|all]
+
+    Confirmed bookings from the host's point of view — powers the
+    /bookings "Confirmed" tab. Complements BookingRequestListView, which
+    handles the pre-approval physical queue only. Returns Booking rows
+    (public-facing bookings, both online and approved physical)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request) -> Response:
+        status_filter = request.query_params.get("status", "upcoming")
+        qs = Booking.objects.filter(host=request.user).order_by("-start_at")
+        now = djtz.now()
+        if status_filter == "upcoming":
+            qs = qs.filter(status=Booking.Status.CONFIRMED, end_at__gte=now)
+        elif status_filter == "past":
+            qs = qs.filter(status=Booking.Status.CONFIRMED, end_at__lt=now)
+        elif status_filter == "cancelled":
+            qs = qs.filter(status=Booking.Status.CANCELLED)
+        # "all" → no extra filter
+        rows = [_serialize_host_booking(b) for b in qs[:200]]
+        return Response({"bookings": rows})
+
+
+def _serialize_host_booking(b: Booking) -> dict:
+    return {
+        "uuid": str(b.uuid),
+        "kind": b.kind,
+        "status": b.status,
+        "start": b.start_at.isoformat(),
+        "end": b.end_at.isoformat(),
+        "title": b.title,
+        "location": b.location,
+        "visitor_name": b.visitor_name,
+        "visitor_email": b.visitor_email,
+        "cancelled_at": b.cancelled_at.isoformat() if b.cancelled_at else None,
+        "cancelled_by_visitor": b.cancelled_by_visitor,
+        "created_at": b.created_at.isoformat(),
+    }
+
+
 class BookingRequestListView(APIView):
     """GET /api/booking-requests[?status=pending|all]
 

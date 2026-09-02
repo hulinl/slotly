@@ -4,6 +4,7 @@ from .views import (
     BookingRequestDecideView,
     BookingRequestListView,
     GoogleAccountStatusView,
+    HostBookingListView,
     MeetingCreateView,
     MicrosoftAccountStatusView,
     MicrosoftOAuthStartView,
@@ -47,6 +48,7 @@ urlpatterns = [
         name="public-booking-manage",
     ),
     path("booking-requests", BookingRequestListView.as_view(), name="booking-requests-list"),
+    path("host-bookings", HostBookingListView.as_view(), name="host-bookings-list"),
     path(
         "booking-requests/<int:pk>/decide",
         BookingRequestDecideView.as_view(),
