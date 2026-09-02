@@ -182,6 +182,14 @@ export function BookingDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose, submitting]);
 
+  // Compute BEFORE the early return so the hooks count is stable across
+  // open/closed renders — otherwise React throws "Rendered more hooks
+  // than during the previous render" the first time the dialog opens.
+  const requiredQuestionsAnswered = useMemo(() => {
+    const qs = lockedType?.questions ?? [];
+    return qs.every((q) => !q.required || (answers[q.id] ?? "").trim().length > 0);
+  }, [lockedType, answers]);
+
   if (!open || !interval) return null;
 
   const dayLabel = interval.start.toLocaleDateString(undefined, {
@@ -189,10 +197,6 @@ export function BookingDialog({
     day: "numeric",
     month: "long",
   });
-  const requiredQuestionsAnswered = useMemo(() => {
-    const qs = lockedType?.questions ?? [];
-    return qs.every((q) => !q.required || (answers[q.id] ?? "").trim().length > 0);
-  }, [lockedType, answers]);
 
   const canSubmit =
     startMin !== null &&
