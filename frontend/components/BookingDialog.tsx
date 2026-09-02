@@ -58,7 +58,10 @@ export function BookingDialog({
   defaultDurationMin?: number;
   submitting: boolean;
   errorMessage?: string | null;
-  successMessage?: string | null;
+  /** Rendered inside the dialog after a successful booking. Accepts JSX
+   * so callers can inject action buttons (Join meeting, Add to calendar,
+   * Manage booking) alongside the confirmation text. */
+  successMessage?: React.ReactNode;
   onSubmit: (v: BookingSubmit) => void;
   /** Only used in public mode — shown to visitors so they know whose
    * calendar they're booking. */
@@ -402,9 +405,9 @@ export function BookingDialog({
 
           {errorMessage && <FormError message={errorMessage} />}
           {successMessage && (
-            <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+            <div className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
               {successMessage}
-            </p>
+            </div>
           )}
         </div>
 

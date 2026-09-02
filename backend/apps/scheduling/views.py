@@ -539,12 +539,17 @@ class MicrosoftWritableCalendarsView(APIView):
 class MeetingCreateView(APIView):
     """
     POST /api/meetings
-    body: {peer_user_id, start, end, title?, notes?}
+    body: {attendee_user_ids: [int, ...], start, end, title?, notes?}
 
     Creates an event on the caller's write_calendar_id (default: primary)
-    and invites `peer_user_id` by email. Before insert, re-checks that both
-    sides are free in [start, end] — a slot in the /people/<id> intersection
-    view could have been consumed by an ICS sync between render and click.
+    and invites everyone in ``attendee_user_ids`` by email. One attendee is
+    the /people/<id> peer flow; many attendees is the /search group flow.
+    Legacy ``peer_user_id`` (single integer) is still accepted so an in-
+    flight call from an older frontend build doesn't hard-fail.
+
+    Before insert we re-check that *everyone* — the host + all attendees —
+    is still free in [start, end]. A slot that looked shared could have
+    been consumed by an ICS sync between the last search and this click.
     """
 
     permission_classes = [IsAuthenticated]
@@ -553,10 +558,35 @@ class MeetingCreateView(APIView):
         from django.conf import settings as _settings
 
         body = request.data or {}
+
+        # Accept the new plural or the legacy singular field. Normalise
+        # to a list of ints; deduplicate; strip self if present.
+        raw_ids = body.get("attendee_user_ids")
+        if raw_ids is None and "peer_user_id" in body:
+            raw_ids = [body["peer_user_id"]]
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return Response(
+                {"attendee_user_ids": "Required list of user ids (at least one)."},
+                status=400,
+            )
         try:
-            peer_id = int(body.get("peer_user_id"))
+            attendee_ids = list({int(x) for x in raw_ids if int(x) != request.user.pk})
         except (TypeError, ValueError):
-            return Response({"peer_user_id": "Required integer."}, status=400)
+            return Response(
+                {"attendee_user_ids": "Must contain integer user ids."},
+                status=400,
+            )
+        if not attendee_ids:
+            return Response(
+                {"attendee_user_ids": "Pick at least one attendee other than yourself."},
+                status=400,
+            )
+        if len(attendee_ids) > 100:
+            return Response(
+                {"attendee_user_ids": "Too many attendees (max 100)."},
+                status=400,
+            )
+
         try:
             start_dt = _parse_iso_dt(body.get("start", ""))
             end_dt = _parse_iso_dt(body.get("end", ""))
@@ -568,33 +598,47 @@ class MeetingCreateView(APIView):
             return Response({"detail": "Meeting longer than 12 hours refused."}, status=400)
 
         from apps.accounts.models import User as _User
-        peer = get_object_or_404(_User, pk=peer_id)
-        if peer.pk == request.user.pk:
-            return Response({"peer_user_id": "Pick a peer other than yourself."}, status=400)
-
-        if not _can_view_peer(request.user, peer):
+        attendees = list(_User.objects.filter(pk__in=attendee_ids))
+        found_ids = {u.pk for u in attendees}
+        missing = [pk for pk in attendee_ids if pk not in found_ids]
+        if missing:
             return Response(
-                {"detail": "You're not connected to this user."},
-                status=403,
+                {"attendee_user_ids": f"Unknown user(s): {missing}"},
+                status=404,
             )
+
+        # Visibility check — caller must be able to see each attendee
+        # (shared team, connection, or public share). Fail closed if any
+        # attendee is out of reach.
+        for u in attendees:
+            if not _can_view_peer(request.user, u):
+                return Response(
+                    {"detail": f"You're not connected to user {u.pk}."},
+                    status=403,
+                )
 
         provider = _pick_write_provider(request.user)
         if provider is None:
             return Response(
-                {"detail": "Connect a calendar in /settings/integrations first."},
+                {"detail": "Connect a calendar in /settings/calendars first."},
                 status=409,
             )
 
-        # Re-check availability — one last defensive sweep against races.
-        conflict_user = _first_busy_user([request.user, peer], start_dt, end_dt)
+        # Re-check availability for everyone — one last sweep before insert.
+        conflict_user = _first_busy_user([request.user, *attendees], start_dt, end_dt)
         if conflict_user is not None:
-            who = "You are" if conflict_user.pk == request.user.pk else f"{conflict_user.first_name or 'The other person'} is"
+            who = (
+                "You are"
+                if conflict_user.pk == request.user.pk
+                else f"{conflict_user.first_name or 'One of the attendees'} is"
+            )
             return Response(
                 {"detail": f"{who} no longer free at that time — please pick another slot."},
                 status=409,
             )
 
-        title = _clean_text(body.get("title"), fallback=_default_title(peer), maxlen=200)
+        default_title = _default_title(attendees[0]) if len(attendees) == 1 else "Group meeting"
+        title = _clean_text(body.get("title"), fallback=default_title, maxlen=200)
         notes = _clean_text(body.get("notes"), fallback="", maxlen=2000)
 
         try:
@@ -606,7 +650,7 @@ class MeetingCreateView(APIView):
                 start_iso=start_dt.isoformat(),
                 end_iso=end_dt.isoformat(),
                 time_zone=_settings.TIME_ZONE,
-                attendees=[peer.email],
+                attendees=[u.email for u in attendees],
             )
         except (GoogleOAuthError, _graph.MicrosoftOAuthError) as exc:
             return Response({"detail": f"Reconnect calendar: {exc}"}, status=401)
@@ -620,6 +664,7 @@ class MeetingCreateView(APIView):
                 # htmlLink for Google, webLink for Graph — surface whichever
                 # the provider returned so the frontend can link to the event.
                 "html_link": event.get("htmlLink") or event.get("webLink"),
+                "meet_link": _extract_meet_link(event),
                 "start": start_dt.isoformat(),
                 "end": end_dt.isoformat(),
                 "provider": provider.name,
@@ -776,6 +821,7 @@ class PublicMeetingCreateView(APIView):
             "ok": True,
             "event": {
                 "id": event.get("id"),
+                "meet_link": _extract_meet_link(event),
                 "start": start_dt.isoformat(),
                 "end": end_dt.isoformat(),
                 "provider": provider.name,
@@ -1096,6 +1142,25 @@ def _clean_text(value, *, fallback: str, maxlen: int) -> str:
 def _default_title(peer) -> str:
     name = f"{peer.first_name} {peer.last_name}".strip() or peer.email
     return f"Meeting with {name}"
+
+
+def _extract_meet_link(event: dict) -> str:
+    """Pull the video-call URL out of a provider event dict, or ""'.
+    - Google: top-level `hangoutLink`; fallback to conferenceData
+      entryPoints where entryPointType == "video".
+    - Microsoft Graph: `onlineMeeting.joinUrl`.
+    """
+    link = event.get("hangoutLink")
+    if link:
+        return link
+    conf = event.get("conferenceData") or {}
+    for ep in conf.get("entryPoints", []) or []:
+        if ep.get("entryPointType") == "video" and ep.get("uri"):
+            return ep["uri"]
+    online = event.get("onlineMeeting") or {}
+    if online.get("joinUrl"):
+        return online["joinUrl"]
+    return ""
 
 
 def _looks_like_email(s: str) -> bool:

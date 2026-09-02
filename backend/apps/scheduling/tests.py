@@ -574,6 +574,88 @@ class CreateEventPayloadTests(TestCase):
         self.assertNotIn("conferenceData", kwargs["json"])
 
 
+class MeetingCreateGroupTests(TestCase):
+    """POST /api/meetings with multiple attendees — feeds the /search
+    "book a group slot" flow. Also verifies the legacy single peer_user_id
+    field still works so an old cached frontend doesn't hard-fail on us."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.host = UserModel.objects.create_user(email="host@test.local", password="pwpw12345xyz")
+        _connect_google(self.host)
+        self.a = UserModel.objects.create_user(email="a@test.local", password="pwpw12345xyz")
+        self.b = UserModel.objects.create_user(email="b@test.local", password="pwpw12345xyz")
+        # Team membership so _can_view_peer passes for both attendees.
+        from apps.teams.models import Team, Membership
+        team = Team.objects.create(name="Squad")
+        Membership.objects.create(team=team, user=self.host, role=Membership.Role.ADMIN)
+        Membership.objects.create(team=team, user=self.a, role=Membership.Role.MEMBER)
+        Membership.objects.create(team=team, user=self.b, role=Membership.Role.MEMBER)
+        self.client = APIClient()
+        self.client.force_authenticate(self.host)
+
+    def test_group_booking_invites_every_attendee(self):
+        start = (djtz.now() + timedelta(hours=24)).isoformat()
+        end = (djtz.now() + timedelta(hours=24, minutes=30)).isoformat()
+        with patch("apps.scheduling.views.create_calendar_event") as mc:
+            mc.return_value = {"id": "e1"}
+            resp = self.client.post(
+                reverse("meetings-create"),
+                {
+                    "attendee_user_ids": [self.a.pk, self.b.pk],
+                    "start": start,
+                    "end": end,
+                },
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        _, kwargs = mc.call_args
+        self.assertEqual(sorted(kwargs["attendees"]), sorted([self.a.email, self.b.email]))
+
+    def test_legacy_peer_user_id_still_works(self):
+        start = (djtz.now() + timedelta(hours=24)).isoformat()
+        end = (djtz.now() + timedelta(hours=24, minutes=30)).isoformat()
+        with patch("apps.scheduling.views.create_calendar_event") as mc:
+            mc.return_value = {"id": "e2"}
+            resp = self.client.post(
+                reverse("meetings-create"),
+                {"peer_user_id": self.a.pk, "start": start, "end": end},
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        _, kwargs = mc.call_args
+        self.assertEqual(kwargs["attendees"], [self.a.email])
+
+    def test_self_stripped_from_attendees(self):
+        start = (djtz.now() + timedelta(hours=24)).isoformat()
+        end = (djtz.now() + timedelta(hours=24, minutes=30)).isoformat()
+        with patch("apps.scheduling.views.create_calendar_event") as mc:
+            mc.return_value = {"id": "e3"}
+            resp = self.client.post(
+                reverse("meetings-create"),
+                {
+                    "attendee_user_ids": [self.host.pk, self.a.pk],
+                    "start": start,
+                    "end": end,
+                },
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        _, kwargs = mc.call_args
+        # Host is the calendar owner — inviting themselves is nonsense.
+        self.assertEqual(kwargs["attendees"], [self.a.email])
+
+    def test_empty_attendees_returns_400(self):
+        start = (djtz.now() + timedelta(hours=24)).isoformat()
+        end = (djtz.now() + timedelta(hours=24, minutes=30)).isoformat()
+        resp = self.client.post(
+            reverse("meetings-create"),
+            {"attendee_user_ids": [], "start": start, "end": end},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+
 class ProviderPickerTests(TestCase):
     """_pick_write_provider picks Google when both are connected, MS as
     fallback, None when neither. Direct unit test — cheap to run and covers

@@ -7,9 +7,11 @@ import { AuthedHeader } from "@/components/AuthedHeader";
 import { DatePicker } from "@/components/DatePicker";
 import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { SlotsCalendar } from "@/components/SlotsCalendar";
+import { BookingDialog, type BookingSubmit } from "@/components/BookingDialog";
 import { Button, FormError, FormSuccess, Input, Label, Select } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import { syncAllMyCalendars } from "@/lib/calendars";
+import { createMeeting, hasWritableProvider } from "@/lib/google";
 import { fetchHolidaysForRange } from "@/lib/holidays";
 import { getMe } from "@/lib/me";
 import {
@@ -661,6 +663,8 @@ function SearchForm({
             workingHoursRange={result.workingHoursRange}
             durationMin={duration}
             holidays={holidays}
+            attendeeIds={Array.from(selected)}
+            teamName={teams.find((t) => t.id === teamId)?.name}
           />
           <SaveCurrentSearch
             teamId={teamId}
@@ -1064,15 +1068,76 @@ function Results({
   workingHoursRange,
   durationMin,
   holidays,
+  attendeeIds,
+  teamName,
 }: {
   slots: Slot[];
   truncated: boolean;
   workingHoursRange: [number, number] | null;
   durationMin: number;
   holidays: Map<string, string>;
+  /** Member ids the search returned slots for — used as attendees when
+   * the caller clicks a slot to book. Empty means single-user search
+   * (unusual) — booking disabled in that case. */
+  attendeeIds: number[];
+  teamName?: string;
 }) {
   const [view, setView] = useState<"calendar" | "list">("calendar");
   const grouped = useMemo(() => groupByDay(slots), [slots]);
+
+  const [canBook, setCanBook] = useState<boolean | null>(null);
+  const [bookingInterval, setBookingInterval] = useState<{ start: Date; end: Date } | null>(null);
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
+  const [bookingSuccess, setBookingSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    hasWritableProvider()
+      .then((ok) => alive && setCanBook(ok))
+      .catch(() => alive && setCanBook(false));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const defaultTitle = teamName ? `${teamName} sync` : "Group meeting";
+
+  async function onBookingSubmit(v: BookingSubmit) {
+    if (attendeeIds.length === 0) return;
+    setBookingSubmitting(true);
+    setBookingError(null);
+    setBookingSuccess(null);
+    try {
+      await createMeeting({
+        attendeeUserIds: attendeeIds,
+        start: v.startIso,
+        end: v.endIso,
+        title: v.title,
+        notes: v.notes,
+      });
+      setBookingSuccess(
+        attendeeIds.length === 1
+          ? "Meeting created — invite sent."
+          : `Meeting created — ${attendeeIds.length} invites sent.`,
+      );
+      setTimeout(() => {
+        setBookingInterval(null);
+        setBookingSuccess(null);
+      }, 1500);
+    } catch (err) {
+      setBookingError(err instanceof Error ? err.message : "Couldn't create meeting");
+    }
+    finally {
+      setBookingSubmitting(false);
+    }
+  }
+
+  function openBooking(iv: { start: Date; end: Date }) {
+    setBookingError(null);
+    setBookingSuccess(null);
+    setBookingInterval(iv);
+  }
 
   if (slots.length === 0) {
     return (
@@ -1131,12 +1196,24 @@ function Results({
         </div>
       </header>
 
+      {canBook === false && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-100">
+          <p>
+            Connect Google Calendar in{" "}
+            <Link href="/settings/calendars" className="font-medium underline">
+              Settings → Calendars
+            </Link>{" "}
+            to book meetings directly from a slot.
+          </p>
+        </div>
+      )}
       {view === "calendar" ? (
         <SlotsCalendar
           slots={slots}
           durationMin={durationMin}
           holidays={holidays}
           workingHoursRange={workingHoursRange ?? undefined}
+          onIntervalClick={canBook && attendeeIds.length > 0 ? openBooking : undefined}
         />
       ) : (
         <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -1151,6 +1228,17 @@ function Results({
                       className="flex items-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800"
                     >
                       <span className="flex-1 font-medium">{formatTimeRange(s)}</span>
+                      {canBook && attendeeIds.length > 0 && (
+                        <button
+                          onClick={() =>
+                            openBooking({ start: new Date(s.start), end: new Date(s.end) })
+                          }
+                          className="rounded bg-indigo-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-indigo-700"
+                          type="button"
+                        >
+                          Book
+                        </button>
+                      )}
                       <button
                         onClick={() => copyToClipboard(`${day}, ${formatTimeRange(s)}`)}
                         className="text-xs text-zinc-500 underline dark:text-zinc-400"
@@ -1166,6 +1254,19 @@ function Results({
           </div>
         </div>
       )}
+
+      <BookingDialog
+        open={bookingInterval !== null}
+        onClose={() => setBookingInterval(null)}
+        interval={bookingInterval}
+        mode="authed"
+        defaultTitle={defaultTitle}
+        defaultDurationMin={durationMin}
+        submitting={bookingSubmitting}
+        errorMessage={bookingError}
+        successMessage={bookingSuccess}
+        onSubmit={onBookingSubmit}
+      />
     </section>
   );
 }

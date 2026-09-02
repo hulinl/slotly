@@ -98,12 +98,23 @@ export async function getWritableCalendars(): Promise<WritableCalendar[]> {
 
 export type CreatedMeeting = {
   ok: true;
-  event: { id: string; html_link?: string; start: string; end: string };
+  event: {
+    id: string;
+    html_link?: string;
+    /** Video-call URL (Google Meet / Teams). Empty for physical bookings
+     * or providers that couldn't create an online meeting. */
+    meet_link?: string;
+    start: string;
+    end: string;
+    provider?: "google" | "microsoft";
+  };
 };
 
-/** Authenticated peer booking — /people/[id] SlotsCalendar → this. */
-export async function createMeetingWithPeer(input: {
-  peerUserId: number;
+/** Authenticated booking — one call for both single-peer (/people/[id])
+ * and group (/search) flows. `attendeeUserIds` may hold one id (peer
+ * flow) or many (a search-result slot with a whole team). */
+export async function createMeeting(input: {
+  attendeeUserIds: number[];
   start: string; // ISO 8601 (may include tz or be local)
   end: string;
   title?: string;
@@ -114,7 +125,7 @@ export async function createMeetingWithPeer(input: {
     credentials: "include",
     headers: { "Content-Type": "application/json", ...csrfHeader() },
     body: JSON.stringify({
-      peer_user_id: input.peerUserId,
+      attendee_user_ids: input.attendeeUserIds,
       start: input.start,
       end: input.end,
       title: input.title,
@@ -130,6 +141,24 @@ export async function createMeetingWithPeer(input: {
     throw new Error(body.detail ?? `HTTP ${res.status}`);
   }
   return { ok: true, event: body.event };
+}
+
+/** Thin single-peer alias so existing callers don't have to wrap in
+ * arrays. Delegates to createMeeting. */
+export async function createMeetingWithPeer(input: {
+  peerUserId: number;
+  start: string;
+  end: string;
+  title?: string;
+  notes?: string;
+}): Promise<CreatedMeeting> {
+  return createMeeting({
+    attendeeUserIds: [input.peerUserId],
+    start: input.start,
+    end: input.end,
+    title: input.title,
+    notes: input.notes,
+  });
 }
 
 export type PublicBookingResult =
