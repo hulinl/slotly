@@ -969,6 +969,102 @@ def _notify_booking_cancelled(booking: Booking) -> None:
 # ---------------------------------------------------------------------------
 
 
+class HostBookingCancelView(APIView):
+    """POST /api/host-bookings/<uuid>/cancel  body: {reason?}
+
+    Host-initiated cancel. Mirrors the visitor-side flow: deletes the
+    calendar event on the provider, marks the Booking row cancelled, and
+    e-mails the visitor a branded confirmation with reason (if given).
+    Idempotent — a second call on an already-cancelled row is a no-op
+    that returns the current state."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: Request, uuid_) -> Response:
+        booking = Booking.objects.filter(uuid=uuid_, host=request.user).first()
+        if booking is None:
+            return Response(status=404)
+        if booking.status == Booking.Status.CANCELLED:
+            return Response(_serialize_host_booking(booking))
+        if booking.end_at < djtz.now():
+            return Response(
+                {"detail": "This booking already ended — nothing to cancel."},
+                status=409,
+            )
+        reason = _clean_text(request.data.get("reason"), fallback="", maxlen=500)
+
+        try:
+            _create_fn, delete_fn = _provider_for(booking.provider)
+        except ValueError:
+            return Response({"detail": "Unknown provider."}, status=500)
+        try:
+            if booking.event_id:
+                delete_fn(booking.host, calendar_id=booking.calendar_id, event_id=booking.event_id)
+        except (GoogleOAuthError, _graph.MicrosoftOAuthError):
+            logger.info(
+                "host cancel booking %s: grant broken; marking cancelled anyway",
+                booking.uuid,
+            )
+        except (GoogleApiError, _graph.MicrosoftApiError) as exc:
+            logger.info("host cancel booking %s: provider refused (%s)", booking.uuid, exc)
+
+        booking.status = Booking.Status.CANCELLED
+        booking.cancelled_at = djtz.now()
+        booking.cancellation_reason = reason
+        booking.cancelled_by_visitor = False
+        booking.save(update_fields=[
+            "status", "cancelled_at", "cancellation_reason", "cancelled_by_visitor",
+        ])
+
+        _mail_visitor_host_cancellation(booking, reason)
+        return Response(_serialize_host_booking(booking))
+
+
+def _mail_visitor_host_cancellation(booking: Booking, reason: str) -> None:
+    """Branded HTML/text email to the visitor when the host cancels."""
+    from django.conf import settings as _settings
+    from django.core.mail import EmailMultiAlternatives
+
+    from apps.notifications.emails import blockquote, html_shell, kv_rows, paragraph
+
+    when = booking.start_at.strftime("%A %d %B, %H:%M")
+    host_name = f"{booking.host.first_name} {booking.host.last_name}".strip() or booking.host.email
+    subject = f"{host_name} cancelled your meeting on {when}"
+
+    text_body = (
+        f"Hi {booking.visitor_name or 'there'},\n\n"
+        f"{host_name} had to cancel your meeting on {when}."
+    )
+    if reason:
+        text_body += f"\n\nNote from {host_name}:\n{reason}"
+
+    intro = paragraph(f"Hi {booking.visitor_name or 'there'},")
+    intro += paragraph(f"{host_name} had to cancel your meeting.")
+    intro += kv_rows([("When", when), ("Where", booking.location)])
+    if reason:
+        intro += paragraph(f"Note from {host_name}:")
+        intro += blockquote(reason)
+
+    html_body = html_shell(
+        title=f"{host_name} cancelled your meeting",
+        intro_html=intro,
+        cta_label="Pick another slot",
+        cta_url=f"{_settings.FRONTEND_BASE_URL.rstrip('/')}/u/{booking.host.share_token}",
+    )
+
+    try:
+        msg = EmailMultiAlternatives(
+            subject=f"[Slotly] {subject}",
+            body=text_body,
+            from_email=_settings.DEFAULT_FROM_EMAIL,
+            to=[booking.visitor_email],
+        )
+        msg.attach_alternative(html_body, "text/html")
+        msg.send(fail_silently=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("host-cancel mail to visitor failed for %s: %s", booking.uuid, exc)
+
+
 class HostBookingListView(APIView):
     """GET /api/host-bookings[?status=upcoming|past|cancelled|all]
 

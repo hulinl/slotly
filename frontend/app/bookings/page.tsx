@@ -19,6 +19,7 @@ import { CardSkeleton, PageSkeleton } from "@/components/Skeleton";
 import { Button, FormError } from "@/components/ui";
 import { getSession } from "@/lib/auth";
 import {
+  cancelHostBooking,
   decideBookingRequest,
   listBookingRequests,
   listHostBookings,
@@ -164,6 +165,12 @@ export default function BookingsPage() {
               setConfirmedFilter(f);
               setConfirmedRows(null);
               refreshConfirmed(f);
+            }}
+            onCancel={async (uuid, reason) => {
+              const updated = await cancelHostBooking(uuid, reason);
+              setConfirmedRows((prev) =>
+                (prev ?? []).map((b) => (b.uuid === uuid ? updated : b)),
+              );
             }}
           />
         )}
@@ -378,11 +385,13 @@ function ConfirmedPanel({
   error,
   filter,
   onFilterChange,
+  onCancel,
 }: {
   rows: HostBooking[] | null;
   error: string | null;
   filter: "upcoming" | "past" | "cancelled";
   onFilterChange: (f: "upcoming" | "past" | "cancelled") => void;
+  onCancel: (uuid: string, reason: string) => Promise<void>;
 }) {
   if (rows === null && error === null) {
     return <CardSkeleton rows={4} />;
@@ -431,7 +440,7 @@ function ConfirmedPanel({
       ) : (
         <ul className="space-y-3">
           {(rows ?? []).map((b) => (
-            <BookingCard key={b.uuid} booking={b} />
+            <BookingCard key={b.uuid} booking={b} onCancel={onCancel} />
           ))}
         </ul>
       )}
@@ -439,7 +448,15 @@ function ConfirmedPanel({
   );
 }
 
-function BookingCard({ booking }: { booking: HostBooking }) {
+function BookingCard({
+  booking,
+  onCancel,
+}: {
+  booking: HostBooking;
+  onCancel: (uuid: string, reason: string) => Promise<void>;
+}) {
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const start = new Date(booking.start);
   const end = new Date(booking.end);
   const dayLabel = start.toLocaleDateString(undefined, {
@@ -451,6 +468,23 @@ function BookingCard({ booking }: { booking: HostBooking }) {
   const timeLabel = `${fmt(start)}–${fmt(end)}`;
   const isPast = end.getTime() < Date.now();
   const isCancelled = booking.status === "cancelled";
+  const canCancel = !isPast && !isCancelled;
+
+  async function doCancel() {
+    const reason = prompt(
+      "Cancel this booking? The visitor will get an email — add an optional note:",
+    );
+    if (reason === null) return; // user hit Cancel on prompt
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      await onCancel(booking.uuid, reason);
+    } catch (err) {
+      setCancelError(err instanceof Error ? err.message : "Cancel failed");
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   return (
     <li
@@ -503,7 +537,23 @@ function BookingCard({ booking }: { booking: HostBooking }) {
             .
           </p>
         )}
+        {cancelError && (
+          <p className="text-xs text-red-600 dark:text-red-400">{cancelError}</p>
+        )}
       </div>
+      {canCancel && (
+        <div className="mt-3 flex justify-end">
+          <button
+            type="button"
+            onClick={doCancel}
+            disabled={cancelling}
+            className="inline-flex items-center gap-1.5 rounded-md border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/40"
+          >
+            <XIcon size={12} aria-hidden />
+            {cancelling ? "Cancelling…" : "Cancel"}
+          </button>
+        </div>
+      )}
     </li>
   );
 }

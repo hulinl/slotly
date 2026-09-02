@@ -792,6 +792,68 @@ class MeetingCreateGroupTests(TestCase):
         self.assertEqual(resp.status_code, 400)
 
 
+class HostCancelTests(TestCase):
+    """Host-side cancel from /bookings Confirmed tab."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.host = UserModel.objects.create_user(
+            email="host@test.local", password="pwpw12345xyz",
+            first_name="Han", last_name="Solo",
+        )
+        _connect_google(self.host)
+        self.other = UserModel.objects.create_user(email="other@test.local", password="pwpw12345xyz")
+        self.client = APIClient()
+        self.client.force_authenticate(self.host)
+        self.booking = Booking.objects.create(
+            host=self.host,
+            provider=Booking.Provider.GOOGLE,
+            calendar_id="primary",
+            event_id="evt-xyz",
+            visitor_name="Padme",
+            visitor_email="padme@example.com",
+            kind=Booking.Kind.ONLINE,
+            title="Chat",
+            start_at=djtz.now() + timedelta(hours=48),
+            end_at=djtz.now() + timedelta(hours=48, minutes=30),
+        )
+
+    def test_host_cancel_deletes_event_and_emails_visitor(self):
+        from django.core import mail as _mail
+        with patch("apps.scheduling.views.delete_calendar_event") as md:
+            resp = self.client.post(
+                reverse("host-bookings-cancel", args=[str(self.booking.uuid)]),
+                {"reason": "Sick day"},
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, Booking.Status.CANCELLED)
+        self.assertFalse(self.booking.cancelled_by_visitor)
+        self.assertEqual(self.booking.cancellation_reason, "Sick day")
+        md.assert_called_once()
+        recipients = [addr for m in _mail.outbox for addr in m.to]
+        self.assertIn("padme@example.com", recipients)
+
+    def test_other_user_cannot_cancel_someone_elses_booking(self):
+        self.client.force_authenticate(self.other)
+        resp = self.client.post(
+            reverse("host-bookings-cancel", args=[str(self.booking.uuid)]),
+            {},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 404)
+
+    def test_unauthenticated_gets_401(self):
+        self.client.force_authenticate(None)
+        resp = self.client.post(
+            reverse("host-bookings-cancel", args=[str(self.booking.uuid)]),
+            {},
+            format="json",
+        )
+        self.assertIn(resp.status_code, (401, 403))
+
+
 class SendBookingRemindersCommandTests(TestCase):
     """`python manage.py send_booking_reminders` — cron entrypoint for the
     T-24h visitor reminder. Verifies (a) rows in the window get mailed and

@@ -279,6 +279,27 @@ export async function listHostBookings(
   return body.bookings;
 }
 
+/** Host-initiated cancel. Mirrors cancelManagedBooking but requires auth
+ * and mails the *visitor* rather than the host. */
+export async function cancelHostBooking(
+  uuid: string,
+  reason?: string,
+): Promise<HostBooking> {
+  const res = await fetch(`/api/host-bookings/${uuid}/cancel`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...csrfHeader() },
+    body: JSON.stringify({ reason: reason ?? "" }),
+  });
+  const body = (await res.json().catch(() => ({}))) as
+    | HostBooking
+    | { detail?: string };
+  if (!res.ok) {
+    throw new Error(("detail" in body && body.detail) || `HTTP ${res.status}`);
+  }
+  return body as HostBooking;
+}
+
 // ---------------------------------------------------------------------------
 // Visitor-side booking management — /b/<uuid>
 // ---------------------------------------------------------------------------
