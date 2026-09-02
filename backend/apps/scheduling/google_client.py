@@ -289,3 +289,18 @@ def create_calendar_event(
     if r.status_code not in (200, 201):
         raise GoogleApiError(r.status_code, f"events.insert: {r.text[:300]}")
     return r.json()
+
+
+def delete_calendar_event(user, *, calendar_id: str, event_id: str) -> None:
+    """Delete an event and notify attendees. Treats 404/410 as success —
+    the event was already gone (deleted from Google directly or expired),
+    which is the state the caller wanted."""
+    creds = get_credentials(user)
+    with bearer_session(creds) as client:
+        r = client.delete(
+            f"/calendar/v3/calendars/{calendar_id}/events/{event_id}",
+            params={"sendUpdates": "all"},
+        )
+    if r.status_code in (200, 204, 404, 410):
+        return
+    raise GoogleApiError(r.status_code, f"events.delete: {r.text[:200]}")

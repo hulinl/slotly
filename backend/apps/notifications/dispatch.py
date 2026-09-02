@@ -127,6 +127,14 @@ _EMAIL_RENDERERS: dict[str, EmailRenderer] = {
             + f".\n\nApprove or reject: {_frontend_base()}/bookings"
         ),
     ),
+    Notification.Type.BOOKING_CANCELLED_BY_VISITOR: lambda p, user: (
+        f"{p.get('visitor_name', 'A visitor')} cancelled a booking",
+        (
+            f"{p.get('visitor_name', 'A visitor')} ({p.get('visitor_email', '')}) "
+            f"cancelled their meeting on {p.get('when', '')}."
+            + (f"\n\nReason:\n{p['reason']}" if p.get("reason") else "")
+        ),
+    ),
 }
 
 
@@ -155,6 +163,21 @@ _HTML_RENDERERS: dict[str, Callable[[dict, object], str]] = {
         ),
         cta_label="Review request",
         cta_url=f"{_frontend_base()}/bookings",
+    ),
+    Notification.Type.BOOKING_CANCELLED_BY_VISITOR: lambda p, user: html_shell(
+        title=f"{p.get('visitor_name', 'A visitor')} cancelled a booking",
+        intro_html=(
+            paragraph(
+                f"{p.get('visitor_name', 'A visitor')} ({p.get('visitor_email', '')}) "
+                "cancelled their meeting with you."
+            )
+            + kv_rows([("When", p.get("when", ""))])
+            + (blockquote(p["reason"]) if p.get("reason") else "")
+            + paragraph(
+                "The calendar event has been removed and the slot is free again.",
+                muted=True,
+            )
+        ),
     ),
 }
 

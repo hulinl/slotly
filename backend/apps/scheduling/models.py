@@ -11,6 +11,8 @@ model demands it).
 
 from __future__ import annotations
 
+import uuid
+
 from django.conf import settings
 from django.db import models
 
@@ -49,6 +51,71 @@ class GoogleAccount(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user_id}:{self.google_email}"
+
+
+class Booking(models.Model):
+    """Record of a calendar event that Slotly created on behalf of the host.
+
+    Populated only for **public** bookings (visitor-facing flow) — peer /
+    group bookings from /people and /search don't need this row because the
+    invitees already control the event in their own calendars. Purpose here
+    is to give the visitor a stable, unguessable manage URL (``/b/<uuid>``)
+    they can cancel or reschedule from without needing a Slotly account.
+
+    Kept separate from ``BookingRequest`` because that model tracks the
+    *pending-approval* lifecycle; this one tracks the *confirmed* event.
+    A physical BookingRequest that gets approved spawns a Booking row.
+    """
+
+    class Provider(models.TextChoices):
+        GOOGLE = "google", "Google"
+        MICROSOFT = "microsoft", "Microsoft"
+
+    class Kind(models.TextChoices):
+        ONLINE = "online", "Online"
+        PHYSICAL = "physical", "In person"
+
+    class Status(models.TextChoices):
+        CONFIRMED = "confirmed", "Confirmed"
+        CANCELLED = "cancelled", "Cancelled"
+
+    uuid = models.UUIDField(default=uuid.uuid4, unique=True, db_index=True)
+    host = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="hosted_bookings",
+    )
+    provider = models.CharField(max_length=16, choices=Provider.choices)
+    calendar_id = models.CharField(max_length=1024, blank=True)
+    event_id = models.CharField(max_length=256, blank=True, db_index=True)
+
+    visitor_name = models.CharField(max_length=120, blank=True)
+    visitor_email = models.EmailField(blank=True)
+
+    kind = models.CharField(max_length=16, choices=Kind.choices, default=Kind.ONLINE)
+    title = models.CharField(max_length=200, blank=True)
+    location = models.CharField(max_length=300, blank=True)
+    notes = models.TextField(blank=True)
+
+    start_at = models.DateTimeField()
+    end_at = models.DateTimeField()
+
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.CONFIRMED)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancellation_reason = models.TextField(blank=True)
+    cancelled_by_visitor = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=("host", "-start_at")),
+            models.Index(fields=("visitor_email", "-start_at")),
+        ]
+
+    def __str__(self) -> str:
+        return f"Booking(host={self.host_id}, {self.status}, {self.start_at})"
 
 
 class BookingRequest(models.Model):

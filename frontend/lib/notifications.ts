@@ -15,6 +15,7 @@ export const NOTIFICATION_EVENTS = [
   "connection.requested",
   "connection.accepted",
   "booking.request_received",
+  "booking.cancelled_by_visitor",
 ] as const;
 
 export type NotificationEvent = (typeof NOTIFICATION_EVENTS)[number];
@@ -101,6 +102,7 @@ export function renderNotification(n: Notification): RenderedNotification {
     visitor_email?: string;
     when?: string;
     location?: string;
+    reason?: string;
   };
   const teamLink = p.team_id !== undefined ? `/groups/${p.team_id}` : undefined;
   switch (n.type) {
@@ -170,6 +172,10 @@ export function renderNotification(n: Notification): RenderedNotification {
         text: `${p.visitor_name ?? "Someone"} wants to meet in person${p.when ? ` on ${p.when}` : ""}.`,
         href: "/bookings",
       };
+    case "booking.cancelled_by_visitor":
+      return {
+        text: `${p.visitor_name ?? "A visitor"} cancelled a booking${p.when ? ` on ${p.when}` : ""}.`,
+      };
   }
 }
 
@@ -188,4 +194,5 @@ export const EVENT_LABELS: Record<NotificationEvent, string> = {
   "connection.requested": "Someone wants to connect with you",
   "connection.accepted": "Your connection request was accepted",
   "booking.request_received": "Someone wants to meet in person",
+  "booking.cancelled_by_visitor": "A visitor cancelled a booking",
 };

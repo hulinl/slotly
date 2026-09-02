@@ -276,7 +276,7 @@ class StatusAndDisconnectTests(TestCase):
 from django.contrib.auth import get_user_model  # noqa: E402
 from django.core import mail  # noqa: E402
 
-from .models import BookingRequest  # noqa: E402
+from .models import Booking, BookingRequest  # noqa: E402
 
 
 def _connect_google(user):
@@ -572,6 +572,142 @@ class CreateEventPayloadTests(TestCase):
         _, kwargs = instance.post.call_args
         self.assertNotIn("conferenceDataVersion", kwargs["params"])
         self.assertNotIn("conferenceData", kwargs["json"])
+
+
+class PublicBookingManageTests(TestCase):
+    """/api/public/bookings/<uuid> — visitor's cancel flow."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.host = UserModel.objects.create_user(email="host@test.local", password="pwpw12345xyz")
+        _connect_google(self.host)
+        self.client = APIClient()
+        self.booking = Booking.objects.create(
+            host=self.host,
+            provider=Booking.Provider.GOOGLE,
+            calendar_id="primary",
+            event_id="evt-xyz",
+            visitor_name="Zoe",
+            visitor_email="zoe@example.com",
+            kind=Booking.Kind.ONLINE,
+            title="Coffee chat",
+            start_at=djtz.now() + timedelta(hours=48),
+            end_at=djtz.now() + timedelta(hours=48, minutes=30),
+        )
+
+    def test_get_returns_booking_details(self):
+        resp = self.client.get(
+            reverse("public-booking-manage", args=[str(self.booking.uuid)]),
+        )
+        self.assertEqual(resp.status_code, 200)
+        body = resp.json()
+        self.assertEqual(body["uuid"], str(self.booking.uuid))
+        self.assertEqual(body["visitor_name"], "Zoe")
+        self.assertEqual(body["status"], "confirmed")
+
+    def test_get_unknown_uuid_returns_404(self):
+        resp = self.client.get(
+            reverse("public-booking-manage", args=["00000000-0000-0000-0000-000000000000"]),
+        )
+        self.assertEqual(resp.status_code, 404)
+
+    def test_cancel_deletes_event_and_marks_row(self):
+        with patch("apps.scheduling.views.delete_calendar_event") as md:
+            resp = self.client.post(
+                reverse("public-booking-manage", args=[str(self.booking.uuid)]),
+                {"reason": "Conflict came up"},
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, Booking.Status.CANCELLED)
+        self.assertTrue(self.booking.cancelled_by_visitor)
+        self.assertEqual(self.booking.cancellation_reason, "Conflict came up")
+        md.assert_called_once()
+        _, kwargs = md.call_args
+        self.assertEqual(kwargs["calendar_id"], "primary")
+        self.assertEqual(kwargs["event_id"], "evt-xyz")
+
+    def test_cancel_is_idempotent(self):
+        self.booking.status = Booking.Status.CANCELLED
+        self.booking.save(update_fields=["status"])
+        with patch("apps.scheduling.views.delete_calendar_event") as md:
+            resp = self.client.post(
+                reverse("public-booking-manage", args=[str(self.booking.uuid)]),
+                {},
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 200)
+        md.assert_not_called()
+
+    def test_cancel_past_booking_returns_409(self):
+        self.booking.start_at = djtz.now() - timedelta(hours=2)
+        self.booking.end_at = djtz.now() - timedelta(hours=1)
+        self.booking.save(update_fields=["start_at", "end_at"])
+        resp = self.client.post(
+            reverse("public-booking-manage", args=[str(self.booking.uuid)]),
+            {},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 409)
+
+    def test_cancel_survives_provider_error(self):
+        """If Google/MS refuses the delete (event already gone, grant broken,
+        etc.) we still mark our row cancelled so the visitor sees success."""
+        from .google_client import GoogleApiError
+        with patch("apps.scheduling.views.delete_calendar_event") as md:
+            md.side_effect = GoogleApiError(410, "gone")
+            resp = self.client.post(
+                reverse("public-booking-manage", args=[str(self.booking.uuid)]),
+                {},
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.booking.refresh_from_db()
+        self.assertEqual(self.booking.status, Booking.Status.CANCELLED)
+
+
+class PublicBookingCreatesRowTests(TestCase):
+    """POST /api/public/meetings/<token> now records a Booking row so the
+    visitor can later cancel via /b/<uuid>. Covers the online path;
+    physical goes through BookingRequestDecideView (tested separately)."""
+
+    def setUp(self):
+        UserModel = get_user_model()
+        self.host = UserModel.objects.create_user(email="host@test.local", password="pwpw12345xyz")
+        self.host.share_enabled = True
+        self.host.save(update_fields=["share_enabled"])
+        _connect_google(self.host)
+        self.client = APIClient()
+
+    def test_online_booking_creates_booking_row_with_manage_url(self):
+        start, end = _future_slot()
+        with patch("apps.scheduling.views.create_calendar_event") as mc:
+            mc.return_value = {"id": "evt-abc"}
+            resp = self.client.post(
+                reverse("public-meetings-create", args=[str(self.host.share_token)]),
+                {
+                    "visitor_name": "Alice",
+                    "visitor_email": "alice@example.com",
+                    "start": start,
+                    "end": end,
+                    "kind": "online",
+                },
+                format="json",
+            )
+        self.assertEqual(resp.status_code, 201, resp.content)
+        body = resp.json()
+        self.assertIn("manage_url", body)
+        # A Booking row now exists tying visitor to the calendar event.
+        bookings = Booking.objects.filter(host=self.host)
+        self.assertEqual(bookings.count(), 1)
+        booking = bookings.first()
+        self.assertEqual(booking.visitor_email, "alice@example.com")
+        self.assertEqual(booking.event_id, "evt-abc")
+        self.assertIn(str(booking.uuid), body["manage_url"])
+        # The manage URL is baked into the event description sent to Google.
+        _, kwargs = mc.call_args
+        self.assertIn(str(booking.uuid), kwargs["description"])
 
 
 class MeetingCreateGroupTests(TestCase):

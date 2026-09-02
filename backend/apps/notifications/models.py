@@ -33,6 +33,8 @@ class Notification(models.Model):
         # booking-related — physical (in-person) meetings need host approval
         # before they become calendar events; online bookings skip this path.
         BOOKING_REQUEST_RECEIVED = "booking.request_received", "Someone wants to meet in person"
+        # A visitor cancelled a confirmed booking from the /b/<uuid> page.
+        BOOKING_CANCELLED_BY_VISITOR = "booking.cancelled_by_visitor", "A visitor cancelled a booking"
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,

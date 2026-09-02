@@ -38,11 +38,12 @@ from .google_client import (
     GoogleOAuthError,
     authorize_url,
     create_calendar_event,
+    delete_calendar_event,
     exchange_code,
     fetch_userinfo,
     list_writable_calendars,
 )
-from .models import BookingRequest, GoogleAccount, MicrosoftAccount
+from .models import Booking, BookingRequest, GoogleAccount, MicrosoftAccount
 from .security import encrypt
 
 logger = logging.getLogger(__name__)
@@ -790,9 +791,26 @@ class PublicMeetingCreateView(APIView):
         default_title = f"Meeting with {visitor_name}"
         title = _clean_text(body.get("title"), fallback=default_title, maxlen=200)
         notes_from_visitor = _clean_text(body.get("notes"), fallback="", maxlen=2000)
-        description = f"Booked via your Slotly public link by {visitor_name} <{visitor_email}>."
+        base_description = f"Booked via your Slotly public link by {visitor_name} <{visitor_email}>."
         if notes_from_visitor:
-            description += f"\n\nNote:\n{notes_from_visitor}"
+            base_description += f"\n\nNote:\n{notes_from_visitor}"
+
+        # Create the Booking row up front (uuid is auto-generated) so the
+        # manage-URL footer we add to the event description points at a
+        # real row. Event id is filled after the calendar insert succeeds.
+        booking = Booking(
+            host=user,
+            provider=provider.name,
+            calendar_id=provider.write_calendar_id,
+            visitor_name=visitor_name,
+            visitor_email=visitor_email,
+            kind=Booking.Kind.ONLINE,
+            title=title,
+            notes=notes_from_visitor,
+            start_at=start_dt,
+            end_at=end_dt,
+        )
+        description = _description_with_manage_link(base_description, booking)
 
         try:
             event = provider.create_event(
@@ -817,6 +835,9 @@ class PublicMeetingCreateView(APIView):
                 status=502,
             )
 
+        booking.event_id = event.get("id", "") or ""
+        booking.save()
+
         return Response({
             "ok": True,
             "event": {
@@ -826,7 +847,118 @@ class PublicMeetingCreateView(APIView):
                 "end": end_dt.isoformat(),
                 "provider": provider.name,
             },
+            "manage_url": _manage_url(booking),
         }, status=201)
+
+
+# ---------------------------------------------------------------------------
+# Visitor-side booking management — /b/<uuid> lets whoever booked a meeting
+# view it and cancel it without needing a Slotly account. Access control is
+# by unguessable uuid (128 bits of entropy); no signature needed since a
+# leaked link only exposes one visitor's own booking.
+# ---------------------------------------------------------------------------
+
+
+class PublicBookingManageView(APIView):
+    """
+    GET  /api/public/bookings/<uuid> — booking details for the manage page.
+    POST /api/public/bookings/<uuid>/cancel body: {reason?} — cancel it.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes: list = []
+
+    def get(self, request: Request, uuid_) -> Response:
+        booking = _get_active_booking(uuid_)
+        if booking is None:
+            return Response(status=404)
+        return Response(_serialize_booking(booking))
+
+    def post(self, request: Request, uuid_) -> Response:
+        booking = _get_active_booking(uuid_)
+        if booking is None:
+            return Response(status=404)
+        if booking.status == Booking.Status.CANCELLED:
+            return Response(_serialize_booking(booking))
+        if booking.end_at < djtz.now():
+            return Response(
+                {"detail": "This booking already ended — nothing to cancel."},
+                status=409,
+            )
+        reason = _clean_text(request.data.get("reason"), fallback="", maxlen=500)
+
+        # Delete the calendar event via the provider that created it.
+        # A missing / already-deleted event on the provider side isn't fatal
+        # — we still mark our Booking row cancelled (the caller sees success).
+        try:
+            _create_fn, delete_fn = _provider_for(booking.provider)
+        except ValueError:
+            return Response({"detail": "Unknown provider."}, status=500)
+        try:
+            if booking.event_id:
+                delete_fn(
+                    booking.host,
+                    calendar_id=booking.calendar_id,
+                    event_id=booking.event_id,
+                )
+        except (GoogleOAuthError, _graph.MicrosoftOAuthError):
+            logger.info(
+                "cancel booking %s: host %s provider grant broken; marking cancelled anyway",
+                booking.uuid,
+                booking.host_id,
+            )
+        except (GoogleApiError, _graph.MicrosoftApiError) as exc:
+            logger.info("cancel booking %s: provider refused (%s); marking cancelled", booking.uuid, exc)
+
+        booking.status = Booking.Status.CANCELLED
+        booking.cancelled_at = djtz.now()
+        booking.cancellation_reason = reason
+        booking.cancelled_by_visitor = True
+        booking.save(update_fields=[
+            "status", "cancelled_at", "cancellation_reason", "cancelled_by_visitor",
+        ])
+
+        _notify_booking_cancelled(booking)
+        return Response(_serialize_booking(booking))
+
+
+def _get_active_booking(uuid_) -> Booking | None:
+    return Booking.objects.filter(uuid=uuid_).select_related("host").first()
+
+
+def _serialize_booking(b: Booking) -> dict:
+    host_name = f"{b.host.first_name} {b.host.last_name}".strip() or b.host.email
+    return {
+        "uuid": str(b.uuid),
+        "host_name": host_name,
+        "kind": b.kind,
+        "status": b.status,
+        "start": b.start_at.isoformat(),
+        "end": b.end_at.isoformat(),
+        "title": b.title,
+        "location": b.location,
+        "visitor_name": b.visitor_name,
+        "visitor_email": b.visitor_email,
+        "cancelled_at": b.cancelled_at.isoformat() if b.cancelled_at else None,
+    }
+
+
+def _notify_booking_cancelled(booking: Booking) -> None:
+    """Host in-app notification + email when a visitor cancels."""
+    from apps.notifications.dispatch import notify as _notify
+    from apps.notifications.models import Notification as _N
+
+    when = booking.start_at.strftime("%a %d %b %H:%M")
+    _notify(
+        booking.host,
+        _N.Type.BOOKING_CANCELLED_BY_VISITOR,
+        {
+            "visitor_name": booking.visitor_name,
+            "visitor_email": booking.visitor_email,
+            "when": when,
+            "reason": booking.cancellation_reason,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -892,9 +1024,6 @@ class BookingRequestDecideView(APIView):
                     {"detail": "You're no longer free at that time — reject and ask them to pick another slot."},
                     status=409,
                 )
-            # Location moves to the event's first-class `location` field
-            # (Google/Outlook render a Maps deep-link from it), so the free-
-            # form description is left for the visitor's context only.
             description_parts = [
                 f"Booked via your Slotly public link by {req.visitor_name} <{req.visitor_email}>.",
             ]
@@ -902,7 +1031,23 @@ class BookingRequestDecideView(APIView):
                 description_parts.append(f"\nVisitor note:\n{req.notes}")
             if note:
                 description_parts.append(f"\nYour note:\n{note}")
-            description = "\n".join(description_parts)
+            base_description = "\n".join(description_parts)
+            # Manage-URL footer so the visitor can cancel the confirmed
+            # meeting from the same /b/<uuid> page online bookings use.
+            booking = Booking(
+                host=req.host,
+                provider=provider.name,
+                calendar_id=provider.write_calendar_id,
+                visitor_name=req.visitor_name,
+                visitor_email=req.visitor_email,
+                kind=Booking.Kind.PHYSICAL,
+                title=req.title or f"Meeting with {req.visitor_name}",
+                location=req.location,
+                notes=req.notes,
+                start_at=req.start_at,
+                end_at=req.end_at,
+            )
+            description = _description_with_manage_link(base_description, booking)
             try:
                 event = provider.create_event(
                     req.host,
@@ -913,7 +1058,6 @@ class BookingRequestDecideView(APIView):
                     end_iso=req.end_at.isoformat(),
                     time_zone=_settings.TIME_ZONE,
                     attendees=[req.visitor_email],
-                    # Physical meetings don't need an online meeting link.
                     include_online_meeting=False,
                     location=req.location,
                 )
@@ -928,10 +1072,12 @@ class BookingRequestDecideView(APIView):
                     {"detail": "Calendar refused the event. Try again."},
                     status=502,
                 )
+            booking.event_id = event.get("id", "") or event.get("iCalUId", "") or ""
+            booking.save()
             req.status = BookingRequest.Status.APPROVED
             req.decided_at = djtz.now()
             req.decision_note = note
-            req.event_id = event.get("id", "") or event.get("iCalUId", "")
+            req.event_id = booking.event_id
             req.save(update_fields=["status", "decided_at", "decision_note", "event_id"])
         else:  # reject
             req.status = BookingRequest.Status.REJECTED
@@ -1039,14 +1185,13 @@ def _mail_visitor_rejection(req, note: str) -> None:
 @dataclass(slots=True)
 class _WriteProvider:
     """Uniform handle over Google vs. Microsoft. Booking code calls
-    ``provider.create_event(user, ...)`` without caring which backend it
-    dispatches to. Fields it needs: which provider name (for the response),
-    which calendar to write into (each provider's own default sentinel),
-    and the callable to invoke."""
+    ``provider.create_event(user, ...)`` (and later ``provider.delete_event``)
+    without caring which backend it dispatches to."""
 
     name: str
     write_calendar_id: str
     create_event: Any
+    delete_event: Any
 
 
 def _pick_write_provider(user) -> _WriteProvider | None:
@@ -1060,6 +1205,7 @@ def _pick_write_provider(user) -> _WriteProvider | None:
             name="google",
             write_calendar_id=g.write_calendar_id or "primary",
             create_event=create_calendar_event,
+            delete_event=delete_calendar_event,
         )
     m = MicrosoftAccount.objects.filter(user=user).only("write_calendar_id").first()
     if m is not None:
@@ -1067,8 +1213,33 @@ def _pick_write_provider(user) -> _WriteProvider | None:
             name="microsoft",
             write_calendar_id=m.write_calendar_id,  # empty = primary
             create_event=_graph.create_calendar_event,
+            delete_event=_graph.delete_calendar_event,
         )
     return None
+
+
+def _provider_for(name: str) -> Any:
+    """Look up create/delete helpers by provider name — used from the
+    cancel endpoint which knows the provider from the Booking row."""
+    if name == "google":
+        return create_calendar_event, delete_calendar_event
+    if name == "microsoft":
+        return _graph.create_calendar_event, _graph.delete_calendar_event
+    raise ValueError(f"Unknown provider: {name}")
+
+
+def _manage_url(booking: Booking) -> str:
+    return f"{settings.FRONTEND_BASE_URL.rstrip('/')}/b/{booking.uuid}"
+
+
+def _description_with_manage_link(base: str, booking: Booking) -> str:
+    """Append a "Manage / Cancel this booking" footer to the visitor-
+    facing event description. Kept as the last block so provider clients
+    that truncate long descriptions still show the meeting context first."""
+    footer = (
+        f"\n\n— Manage or cancel this booking: {_manage_url(booking)}"
+    )
+    return (base or "") + footer
 
 
 def _parse_iso_dt(value):

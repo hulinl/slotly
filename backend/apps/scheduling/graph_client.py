@@ -272,3 +272,15 @@ def create_calendar_event(
     if r.status_code not in (200, 201):
         raise MicrosoftApiError(r.status_code, f"events.create: {r.text[:300]}")
     return r.json()
+
+
+def delete_calendar_event(user, *, calendar_id: str, event_id: str) -> None:
+    """Delete an event via Graph. Graph auto-emails a cancellation to
+    attendees. 404 is treated as success (event already gone)."""
+    endpoint = f"/me/events/{event_id}"  # /me/events works even for non-primary calendars
+    creds = get_credentials(user)
+    with _bearer(creds) as client:
+        r = client.delete(endpoint)
+    if r.status_code in (200, 204, 404):
+        return
+    raise MicrosoftApiError(r.status_code, f"events.delete: {r.text[:200]}")

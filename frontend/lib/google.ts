@@ -252,6 +252,52 @@ export async function listBookingRequests(
   return body.requests;
 }
 
+// ---------------------------------------------------------------------------
+// Visitor-side booking management — /b/<uuid>
+// ---------------------------------------------------------------------------
+
+export type ManagedBooking = {
+  uuid: string;
+  host_name: string;
+  kind: "online" | "physical";
+  status: "confirmed" | "cancelled";
+  start: string;
+  end: string;
+  title: string;
+  location: string;
+  visitor_name: string;
+  visitor_email: string;
+  cancelled_at: string | null;
+};
+
+export async function getManagedBooking(uuid: string): Promise<ManagedBooking | null> {
+  const res = await fetch(`/api/public/bookings/${uuid}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as ManagedBooking;
+}
+
+export async function cancelManagedBooking(
+  uuid: string,
+  reason?: string,
+): Promise<ManagedBooking> {
+  const res = await fetch(`/api/public/bookings/${uuid}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason: reason ?? "" }),
+  });
+  const body = (await res.json().catch(() => ({}))) as
+    | ManagedBooking
+    | { detail?: string };
+  if (!res.ok) {
+    throw new Error(("detail" in body && body.detail) || `HTTP ${res.status}`);
+  }
+  return body as ManagedBooking;
+}
+
 export async function decideBookingRequest(
   id: number,
   decision: "approve" | "reject",

@@ -9,6 +9,7 @@ from .views import (
     MicrosoftOAuthStartView,
     MicrosoftWritableCalendarsView,
     OAuthStartView,
+    PublicBookingManageView,
     PublicMeetingCreateView,
     WritableCalendarsView,
     microsoft_oauth_callback,
@@ -37,6 +38,13 @@ urlpatterns = [
         "public/meetings/<uuid:token>",
         PublicMeetingCreateView.as_view(),
         name="public-meetings-create",
+    ),
+    # Single URL, verb-based dispatch: GET returns booking details;
+    # POST (with optional {"reason": "..."}) cancels the booking.
+    path(
+        "public/bookings/<uuid:uuid_>",
+        PublicBookingManageView.as_view(),
+        name="public-booking-manage",
     ),
     path("booking-requests", BookingRequestListView.as_view(), name="booking-requests-list"),
     path(
